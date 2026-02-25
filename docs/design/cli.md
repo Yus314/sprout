@@ -134,7 +134,7 @@ src/
 ├── main.rs          # エントリポイント
 ├── cli.rs           # clap derive定義
 ├── config.rs        # 設定読み込み (~/.config/sprout/config.toml)
-├── frontmatter.rs   # YAMLフロントマターのパースとシリアライズ
+├── frontmatter.rs   # YAMLフロントマターのパース（serde_yaml_ng）と文字列書き戻し
 ├── note.rs          # ノート検出、読み書き
 ├── links.rs         # [[wiki-link]] パースとリンクカウント
 ├── srs.rs           # SRSアルゴリズム（遅延・リンク・負荷分散）
