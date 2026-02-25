@@ -10,6 +10,7 @@
 | `sprout stats` | 成熟度別の統計を表示 |
 | `sprout init <file>` | フロントマター追加 (seedling, interval=1) |
 | `sprout list [--maturity <m>]` | トラッキング中の全ノートを一覧表示 |
+| `sprout show <file>` | 単一ノートの詳細情報を表示 |
 
 ## グローバルオプション
 
@@ -70,6 +71,11 @@ pub enum Commands {
         #[arg(long)]
         maturity: Option<Maturity>,
     },
+    /// Show detailed information about a single note
+    Show {
+        /// Path to the note file
+        file: PathBuf,
+    },
 }
 
 #[derive(ValueEnum, Clone)]
@@ -127,6 +133,97 @@ pub enum OutputFormat { Human, Json }
 }
 ```
 
+### `sprout promote --format json` 出力例
+
+```json
+{
+  "path": "/home/kaki/notes/zettelkasten/note1.md",
+  "relative_path": "zettelkasten/note1.md",
+  "previous_maturity": "seedling",
+  "new_maturity": "budding",
+  "review_interval": 3,
+  "next_review": "2026-02-28",
+  "ease": 2.5
+}
+```
+
+### `sprout init --format json` 出力例
+
+```json
+{
+  "path": "/home/kaki/notes/zettelkasten/note1.md",
+  "relative_path": "zettelkasten/note1.md",
+  "maturity": "seedling",
+  "review_interval": 1,
+  "next_review": "2026-02-26",
+  "ease": 2.5,
+  "created": "2026-02-25"
+}
+```
+
+### `sprout list --format json` 出力例
+
+`review` と同じ配列形式（同一フィールド）。`list` が全ノートを返し、`review` が due のみを返す点が異なる。
+
+```json
+[
+  {
+    "path": "/home/kaki/notes/zettelkasten/note1.md",
+    "relative_path": "zettelkasten/note1.md",
+    "maturity": "seedling",
+    "review_interval": 3,
+    "next_review": "2026-02-25",
+    "ease": 2.5
+  }
+]
+```
+
+### `sprout show --format json` 出力例
+
+トラッキング中のノート:
+
+```json
+{
+  "path": "/home/kaki/notes/zettelkasten/note1.md",
+  "relative_path": "zettelkasten/note1.md",
+  "tracked": true,
+  "maturity": "seedling",
+  "created": "2026-02-25",
+  "last_review": "2026-02-25",
+  "review_interval": 3,
+  "next_review": "2026-02-28",
+  "ease": 2.5,
+  "is_due": true,
+  "days_until_review": 0,
+  "link_count": 5
+}
+```
+
+未トラッキングのファイル（exit 0）:
+
+```json
+{"path": "/home/kaki/notes/zettelkasten/note1.md", "relative_path": "zettelkasten/note1.md", "tracked": false}
+```
+
+ファイル自体が存在しない場合は exit 1。
+
+## エラー出力規約
+
+- **成功**: exit 0, stdout に出力
+- **エラー**: exit 1, stderr にメッセージ
+  - `--format json` 時は `{"error": "<code>", "message": "..."}` 形式で stderr に出力
+- **エラー時は stdout は空** — プラグイン側で `2>&1` を使っても安全にパースできる
+
+### エラー種別
+
+| エラーコード | 説明 |
+|-------------|------|
+| `file_not_found` | 指定されたファイルが存在しない |
+| `no_frontmatter` | sprout フロントマターが見つからない |
+| `vault_not_found` | vault パスが解決できない |
+| `already_initialized` | 既にフロントマターが存在する（`init` 時） |
+| `parse_error` | フロントマターのパースに失敗 |
+
 ## ソースファイル構成
 
 ```
@@ -146,5 +243,6 @@ src/
     ├── promote.rs   # sprout promote <file> <maturity>
     ├── stats.rs     # sprout stats
     ├── init.rs      # sprout init <file>
-    └── list.rs      # sprout list [--maturity <m>]
+    ├── list.rs      # sprout list [--maturity <m>]
+    └── show.rs      # sprout show <file>
 ```

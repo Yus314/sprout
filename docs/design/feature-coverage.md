@@ -64,7 +64,7 @@ org-roam-reviewのフック（`node-accepted-hook`等5種）はEmacs Lispの`run
 
 1. フロントマターのパース・ラウンドトリップ
 2. SRS基本計算（ease, interval, delay）
-3. 全6コマンド（review, done, promote, stats, init, list）
+3. 全7コマンド（review, done, promote, stats, init, list, show）
 4. JSON出力
 5. Kakouneプラグイン
 6. Nixパッケージング
