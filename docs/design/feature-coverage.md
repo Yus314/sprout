@@ -11,6 +11,8 @@
 | 遅延日数考慮 | ❌ | ✅ | sprout独自 |
 | ノート間リンク考慮 | ❌ | ✅ | リンクファクター |
 | 負荷分散 | ❌ | ✅ | ファジングによる日付分散 |
+| レビュー後フック | ✅ (Emacs hook) | ✅ (Kakoune User hook) | エディタ層で対応。`trigger-user-hook` |
+| レビューセッション自動進行 | ✅ (デフォルト有効) | 🔮 | v0.2: sprout.kak拡張 |
 | タグフィルタリング | ✅ | 🔮 | v0.2検討 |
 | バルクレビュー | ✅ | 🔮 | v0.2検討 |
 | Emacsインライン表示 | ✅ | N/A | Kakoune対応に置換 |
@@ -30,9 +32,30 @@
 | YAML frontmatter | ✅ | ✅ | 互換フォーマット |
 | Dataview統合 | ✅ | N/A | CLIネイティブ |
 
+## Hook設計方針
+
+org-roam-reviewのフック（`node-accepted-hook`等5種）はEmacs Lispの`run-hooks`で実行されるEmacsネイティブの機構である。sproutではCLIにフック機構を持たせず、Kakouneの`trigger-user-hook`でエディタ層に実装する。
+
+**根拠:**
+
+- org-roam-reviewのフックと同じ抽象レイヤー（エディタ）に配置される
+- CLIは純粋なデータ変換ツール（入力→フロントマター更新+JSON出力）として保たれる
+- `trigger-user-hook`の1行追加で実装でき、設定項目やエラーハンドリングが不要
+- 他エディタ（Neovim: `User` autocmd、Emacs: `run-hooks`等）も各自の流儀で実装可能
+
+**org-roam-reviewとのフック対応:**
+
+| org-roam-review | Kakoune User hook | トリガー |
+|----------------|-------------------|---------|
+| `node-accepted-hook` | `SproutDoneGood`, `SproutDoneEasy` | `sprout-done good/easy` 成功後 |
+| `node-forgotten-hook` | `SproutDoneHard` | `sprout-done hard` 成功後 |
+| `node-buried-hook` | （v0.2でbury実装時） | — |
+| `node-processed-hook` | `SproutDone` | `sprout-done` 成功後（評価問わず） |
+| `next-node-selected-hook` | `SproutReviewNext` | v0.2: レビューセッション拡張 |
+
 ## v0.1 カバー率
 
-- **org-roam-review**: コア機能の約80%をカバー（タグフィルタ・バルクレビュー除く）
+- **org-roam-review**: コア機能の約85%をカバー（タグフィルタ・バルクレビュー・セッション自動進行除く）
 - **obsidian-sr**: ノートレビュー機能の約70%をカバー（フラッシュカード・モバイル除く）
 
 ## 優先度
@@ -53,6 +76,7 @@
 - バルクレビューモード
 - カスタムmaturityレベル
 - レビュー履歴ログ
+- レビューセッション自動進行 (sprout.kak: `SproutReviewNext` hook)
 
 ### v0.3+ (将来)
 

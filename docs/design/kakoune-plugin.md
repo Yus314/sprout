@@ -77,6 +77,13 @@ define-command sprout-done -params 1 -docstring 'sprout-done <hard|good|easy>: r
         printf 'info "Reviewed: %s → interval %sd, next: %s"\n' "$maturity" "$new_interval" "$next_review"
         # Reload buffer to reflect frontmatter changes
         printf 'edit!\n'
+        # Hooks: generic then rating-specific
+        printf 'trigger-user-hook SproutDone\n'
+        case "$rating" in
+            hard) printf 'trigger-user-hook SproutDoneHard\n' ;;
+            good) printf 'trigger-user-hook SproutDoneGood\n' ;;
+            easy) printf 'trigger-user-hook SproutDoneEasy\n' ;;
+        esac
     }
 }
 
@@ -91,6 +98,13 @@ define-command sprout-promote -params 1 -docstring 'sprout-promote <seedling|bud
         fi
         printf 'info "Promoted to: %s"\n' "$maturity"
         printf 'edit!\n'
+        # Hooks: generic then maturity-specific
+        printf 'trigger-user-hook SproutPromote\n'
+        case "$maturity" in
+            seedling)  printf 'trigger-user-hook SproutPromoteSeedling\n' ;;
+            budding)   printf 'trigger-user-hook SproutPromoteBudding\n' ;;
+            evergreen) printf 'trigger-user-hook SproutPromoteEvergreen\n' ;;
+        esac
     }
 }
 
@@ -104,6 +118,7 @@ define-command sprout-init -docstring 'Initialize sprout frontmatter for current
         fi
         printf 'info "Sprout frontmatter added"\n'
         printf 'edit!\n'
+        printf 'trigger-user-hook SproutInit\n'
     }
 }
 
@@ -133,8 +148,54 @@ map global sprout b ':sprout-promote budding<ret>'           -docstring 'promote
 map global sprout v ':sprout-promote evergreen<ret>'         -docstring 'promote: evergreen'
 ```
 
+## User hook
+
+各コマンドの成功後に `trigger-user-hook` でカスタムイベントを発火する。org-roam-reviewの`run-hooks`によるEmacs hookと同じ抽象レイヤー（エディタ）でフック機能を提供する。CLIにフック機構を持たせない設計とする。
+
+### 発火するフック一覧
+
+| User hook | トリガー | 発火順序 |
+|-----------|---------|---------|
+| `SproutDone` | `sprout-done` 成功後（評価問わず） | 1st |
+| `SproutDoneHard` | `sprout-done hard` 成功後 | 2nd |
+| `SproutDoneGood` | `sprout-done good` 成功後 | 2nd |
+| `SproutDoneEasy` | `sprout-done easy` 成功後 | 2nd |
+| `SproutPromote` | `sprout-promote` 成功後（レベル問わず） | 1st |
+| `SproutPromoteSeedling` | `sprout-promote seedling` 成功後 | 2nd |
+| `SproutPromoteBudding` | `sprout-promote budding` 成功後 | 2nd |
+| `SproutPromoteEvergreen` | `sprout-promote evergreen` 成功後 | 2nd |
+| `SproutInit` | `sprout-init` 成功後 | — |
+
+汎用フック（`SproutDone`, `SproutPromote`）が先に発火し、次に個別フックが発火する。失敗時（`fail`）にはフックは発火しない。
+
+### ユーザー設定例
+
+```kak
+# レビュー後に自動git commit
+hook global User SproutDone %{
+    nop %sh{
+        cd "$(dirname "$kak_buffile")"
+        git add "$kak_buffile"
+        git commit -m "review: $(basename "$kak_buffile")" --quiet
+    }
+}
+
+# hard評価のノートをログに記録
+hook global User SproutDoneHard %{
+    nop %sh{
+        echo "$(date +%Y-%m-%d) HARD: $kak_buffile" >> ~/.local/share/sprout/review.log
+    }
+}
+
+# レビュー完了後に次のノートを自動で開く
+hook global User SproutDone %{
+    sprout-review
+}
+```
+
 ## 設計上の考慮点
 
 - **jq依存**: JSONパースに `jq` を使用。ユーザー環境で既に利用可能
 - **バッファリロード**: `sprout done` と `sprout promote` 後に `edit!` を発行し、更新されたフロントマターを反映
 - **menuコマンド**: Kakouneビルトインの `menu` を使用して選択可能なレビュー予定ノート一覧を表示
+- **フックのエディタ層実装**: CLIは純粋なデータ変換に徹し、ワークフロー拡張はKakouneの`trigger-user-hook`で実現。他エディタも各自のイベント機構（Neovim: `User` autocmd、Emacs: `run-hooks`）で同等の実装が可能
