@@ -10,7 +10,7 @@ clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 gray_matter = "0.3"
-chrono = { version = "0.4", default-features = false, features = ["serde"] }
+chrono = { version = "0.4", default-features = false, features = ["serde", "clock"] }
 walkdir = "2"
 colored = "2"
 anyhow = "1"

@@ -1,0 +1,179 @@
+# sprout.kak -- Kakoune integration for sprout evergreen note CLI
+# Requires: sprout binary in PATH
+
+# ─── User mode ───────────────────────────────────────────────────────
+
+declare-user-mode sprout
+
+map global user s ':enter-user-mode sprout<ret>' -docstring 'sprout mode'
+
+# ─── Commands ────────────────────────────────────────────────────────
+
+define-command sprout-review -docstring 'List notes due for review' %{
+    evaluate-commands %sh{
+        output=$(sprout review --format json)
+        rc=$?
+        if [ $rc -ne 0 ]; then
+            printf 'fail "sprout review failed"\n'
+            exit
+        fi
+        count=$(printf '%s' "$output" | jq 'length')
+        if [ "$count" = "0" ]; then
+            printf 'info "No notes due for review today"\n'
+            exit
+        fi
+        # Build menu entries: each note becomes a menu item that opens the file
+        printf 'menu'
+        printf '%s' "$output" | jq -r '.[] | " %{" + .relative_path + " (" + .maturity + ", interval:" + (.review_interval|tostring) + "d)} %{edit " + .path + "}"'
+        printf '\n'
+    }
+}
+
+define-command sprout-done -params 1 -docstring 'sprout-done <hard|good|easy>: rate the current note' %{
+    write
+    evaluate-commands %sh{
+        file="$kak_buffile"
+        rating="$1"
+        output=$(sprout done "$file" "$rating" --format json)
+        rc=$?
+        if [ $rc -ne 0 ]; then
+            printf 'fail "sprout done failed"\n'
+            exit
+        fi
+        new_interval=$(printf '%s' "$output" | jq -r '.new_interval')
+        next_review=$(printf '%s' "$output" | jq -r '.next_review')
+        maturity=$(printf '%s' "$output" | jq -r '.maturity')
+        printf 'info "Reviewed: %s → interval %sd, next: %s"\n' "$maturity" "$new_interval" "$next_review"
+        # Reload buffer to reflect frontmatter changes
+        printf 'edit!\n'
+        # Hooks: generic then rating-specific
+        printf 'trigger-user-hook SproutDone\n'
+        case "$rating" in
+            hard) printf 'trigger-user-hook SproutDoneHard\n' ;;
+            good) printf 'trigger-user-hook SproutDoneGood\n' ;;
+            easy) printf 'trigger-user-hook SproutDoneEasy\n' ;;
+        esac
+    }
+}
+
+define-command sprout-promote -params 1 -docstring 'sprout-promote <seedling|budding|evergreen>: set maturity' %{
+    write
+    evaluate-commands %sh{
+        file="$kak_buffile"
+        maturity="$1"
+        output=$(sprout promote "$file" "$maturity" --format json)
+        rc=$?
+        if [ $rc -ne 0 ]; then
+            printf 'fail "sprout promote failed"\n'
+            exit
+        fi
+        prev=$(printf '%s' "$output" | jq -r '.previous_maturity')
+        new=$(printf '%s' "$output" | jq -r '.new_maturity')
+        printf 'info "Promoted: %s → %s"\n' "$prev" "$new"
+        printf 'edit!\n'
+        # Hooks: generic then maturity-specific
+        printf 'trigger-user-hook SproutPromote\n'
+        case "$maturity" in
+            seedling)  printf 'trigger-user-hook SproutPromoteSeedling\n' ;;
+            budding)   printf 'trigger-user-hook SproutPromoteBudding\n' ;;
+            evergreen) printf 'trigger-user-hook SproutPromoteEvergreen\n' ;;
+        esac
+    }
+}
+
+define-command sprout-init -docstring 'Initialize sprout frontmatter for current buffer' %{
+    write
+    evaluate-commands %sh{
+        file="$kak_buffile"
+        output=$(sprout init "$file" --format json)
+        rc=$?
+        if [ $rc -ne 0 ]; then
+            printf 'fail "sprout init failed"\n'
+            exit
+        fi
+        maturity=$(printf '%s' "$output" | jq -r '.maturity')
+        next_review=$(printf '%s' "$output" | jq -r '.next_review')
+        printf 'info "Initialized: %s, next review: %s"\n' "$maturity" "$next_review"
+        printf 'edit!\n'
+        printf 'trigger-user-hook SproutInit\n'
+    }
+}
+
+define-command sprout-stats -docstring 'Show vault statistics in info box' %{
+    evaluate-commands %sh{
+        output=$(sprout stats --format json)
+        rc=$?
+        if [ $rc -ne 0 ]; then
+            printf 'fail "sprout stats failed"\n'
+            exit
+        fi
+        total=$(printf '%s' "$output" | jq -r '.total')
+        seedling=$(printf '%s' "$output" | jq -r '.seedling')
+        budding=$(printf '%s' "$output" | jq -r '.budding')
+        evergreen=$(printf '%s' "$output" | jq -r '.evergreen')
+        due=$(printf '%s' "$output" | jq -r '.due_today')
+        overdue=$(printf '%s' "$output" | jq -r '.overdue')
+        printf 'info "Total: %s (seedling: %s, budding: %s, evergreen: %s)\nDue today: %s, Overdue: %s"\n' \
+            "$total" "$seedling" "$budding" "$evergreen" "$due" "$overdue"
+    }
+}
+
+define-command sprout-list -docstring 'List all tracked notes' %{
+    evaluate-commands %sh{
+        output=$(sprout list --format json)
+        rc=$?
+        if [ $rc -ne 0 ]; then
+            printf 'fail "sprout list failed"\n'
+            exit
+        fi
+        count=$(printf '%s' "$output" | jq 'length')
+        if [ "$count" = "0" ]; then
+            printf 'info "No tracked notes"\n'
+            exit
+        fi
+        # Build menu entries: same pattern as sprout-review
+        printf 'menu'
+        printf '%s' "$output" | jq -r '.[] | " %{" + .relative_path + " (" + .maturity + ", interval:" + (.review_interval|tostring) + "d)} %{edit " + .path + "}"'
+        printf '\n'
+    }
+}
+
+define-command sprout-show -docstring 'Show detailed info about current note' %{
+    evaluate-commands %sh{
+        output=$(sprout show "$kak_buffile" --format json)
+        rc=$?
+        if [ $rc -ne 0 ]; then
+            printf 'fail "sprout show failed"\n'
+            exit
+        fi
+        tracked=$(printf '%s' "$output" | jq -r '.tracked')
+        if [ "$tracked" = "false" ]; then
+            printf 'info "Not tracked by sprout"\n'
+            exit
+        fi
+        maturity=$(printf '%s' "$output" | jq -r '.maturity')
+        interval=$(printf '%s' "$output" | jq -r '.review_interval')
+        next_review=$(printf '%s' "$output" | jq -r '.next_review')
+        ease=$(printf '%s' "$output" | jq -r '.ease')
+        is_due=$(printf '%s' "$output" | jq -r '.is_due')
+        link_count=$(printf '%s' "$output" | jq -r '.link_count')
+        due_label="no"
+        if [ "$is_due" = "true" ]; then due_label="YES"; fi
+        printf 'info "Maturity: %s\nInterval: %sd, Next: %s\nEase: %s, Links: %s\nDue: %s"\n' \
+            "$maturity" "$interval" "$next_review" "$ease" "$link_count" "$due_label"
+    }
+}
+
+# ─── Sprout mode key mappings ────────────────────────────────────────
+
+map global sprout r ':sprout-review<ret>'                    -docstring 'review due notes'
+map global sprout h ':sprout-done hard<ret>'                 -docstring 'rate: hard'
+map global sprout g ':sprout-done good<ret>'                 -docstring 'rate: good'
+map global sprout e ':sprout-done easy<ret>'                 -docstring 'rate: easy'
+map global sprout s ':sprout-stats<ret>'                     -docstring 'show stats'
+map global sprout i ':sprout-init<ret>'                      -docstring 'init frontmatter'
+map global sprout p ':sprout-promote seedling<ret>'          -docstring 'promote: seedling'
+map global sprout b ':sprout-promote budding<ret>'           -docstring 'promote: budding'
+map global sprout v ':sprout-promote evergreen<ret>'         -docstring 'promote: evergreen'
+map global sprout l ':sprout-list<ret>'                      -docstring 'list all notes'
+map global sprout ? ':sprout-show<ret>'                      -docstring 'show note info'
