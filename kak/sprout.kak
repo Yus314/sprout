@@ -53,34 +53,47 @@ define-command _sprout-fzf-select -hidden -params 1 \
 
         # fzf unavailable → fallback to menu
         if ! command -v fzf >/dev/null 2>&1; then
-            items=$(printf '%s' "$output" | jq -rj '.[] | " %{" + .relative_path + " (" + .maturity + ", interval:" + (.review_interval|tostring) + "d)} %{edit %{" + .path + "}}"')
+            items=$(printf '%s' "$output" | jq -rj '.[] | " %{" + .relative_path + " (" + .maturity + ")} %{edit %{" + .path + "}}"')
             printf 'menu%s\n' "$items"
             exit
         fi
 
         # Write fzf input to temp file: path<TAB>label per line
         candidates_file=$(mktemp "${TMPDIR:-/tmp}/sprout-fzf-cands-XXXXXX")
-        printf '%s' "$output" | jq -r '.[] | .path + "\t" + .relative_path + " (" + .maturity + ", interval:" + (.review_interval|tostring) + "d)"' > "$candidates_file"
+        printf '%s' "$output" | jq -r '.[] | .path + "\t" + .relative_path + " (" + .maturity + ")"' > "$candidates_file"
+
+        # Generate preview script (frontmatter skip + bat highlight)
+        preview_script=$(mktemp "${TMPDIR:-/tmp}/sprout-fzf-preview-XXXXXX.sh")
+        cat > "$preview_script" << 'PREVIEW_OUTER'
+#!/bin/sh
+awk 'NR==1&&/^---/{f=1;next} f&&/^---/{f=0;next} !f{if(++n>50)exit}1' "$1" | \
+    if command -v bat >/dev/null 2>&1; then
+        bat -l md --style=plain --color=always --paging=never
+    else
+        cat
+    fi
+PREVIEW_OUTER
+        chmod +x "$preview_script"
 
         # Generate temporary script
         script=$(mktemp "${TMPDIR:-/tmp}/sprout-fzf-XXXXXX.sh")
-        cat > "$script" << 'OUTER'
+        cat > "$script" << OUTER
 #!/bin/sh
-candidates_file="$1"
-session="$2"
-client="$3"
-fzf_opts="$4"
-script="$5"
-selected=$(fzf \
-    --delimiter='\t' --with-nth=2.. \
-    --preview='head -50 {1}' \
-    --preview-window=right:50%:wrap \
-    $fzf_opts < "$candidates_file")
-if [ -n "$selected" ]; then
-    file=$(printf '%s' "$selected" | cut -f1)
-    printf 'evaluate-commands -client %s edit %%{%s}\n' "$client" "$file" | kak -p "$session"
+candidates_file="\$1"
+session="\$2"
+client="\$3"
+fzf_opts="\$4"
+script="\$5"
+selected=\$(fzf \\
+    --delimiter='\\t' --with-nth=2.. \\
+    --preview='$preview_script {1}' \\
+    --preview-window=right:50%:wrap \\
+    \$fzf_opts < "\$candidates_file")
+if [ -n "\$selected" ]; then
+    file=\$(printf '%s' "\$selected" | cut -f1)
+    printf 'evaluate-commands -client %s edit %%{%s}\\n' "\$client" "\$file" | kak -p "\$session"
 fi
-rm -f "$candidates_file" "$script"
+rm -f "\$candidates_file" "\$script" "$preview_script"
 OUTER
         chmod +x "$script"
 
