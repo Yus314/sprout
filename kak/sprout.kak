@@ -11,12 +11,16 @@ map global user s ':enter-user-mode sprout<ret>' -docstring 'sprout mode'
 
 define-command sprout-review -docstring 'List notes due for review' %{
     evaluate-commands %sh{
-        output=$(sprout review --format json)
+        err=$(mktemp)
+        output=$(sprout review --format json 2>"$err")
         rc=$?
         if [ $rc -ne 0 ]; then
-            printf 'fail "sprout review failed"\n'
+            msg=$(jq -r '.message // "unknown error"' < "$err")
+            rm -f "$err"
+            printf 'fail "sprout review: %s"\n' "$msg"
             exit
         fi
+        rm -f "$err"
         count=$(printf '%s' "$output" | jq 'length')
         if [ "$count" = "0" ]; then
             printf 'info "No notes due for review today"\n'
@@ -34,12 +38,16 @@ define-command sprout-done -params 1 -docstring 'sprout-done <hard|good|easy>: r
     evaluate-commands %sh{
         file="$kak_buffile"
         rating="$1"
-        output=$(sprout done "$file" "$rating" --format json)
+        err=$(mktemp)
+        output=$(sprout done "$file" "$rating" --format json 2>"$err")
         rc=$?
         if [ $rc -ne 0 ]; then
-            printf 'fail "sprout done failed"\n'
+            msg=$(jq -r '.message // "unknown error"' < "$err")
+            rm -f "$err"
+            printf 'fail "sprout done: %s"\n' "$msg"
             exit
         fi
+        rm -f "$err"
         new_interval=$(printf '%s' "$output" | jq -r '.new_interval')
         next_review=$(printf '%s' "$output" | jq -r '.next_review')
         maturity=$(printf '%s' "$output" | jq -r '.maturity')
@@ -61,12 +69,16 @@ define-command sprout-promote -params 1 -docstring 'sprout-promote <seedling|bud
     evaluate-commands %sh{
         file="$kak_buffile"
         maturity="$1"
-        output=$(sprout promote "$file" "$maturity" --format json)
+        err=$(mktemp)
+        output=$(sprout promote "$file" "$maturity" --format json 2>"$err")
         rc=$?
         if [ $rc -ne 0 ]; then
-            printf 'fail "sprout promote failed"\n'
+            msg=$(jq -r '.message // "unknown error"' < "$err")
+            rm -f "$err"
+            printf 'fail "sprout promote: %s"\n' "$msg"
             exit
         fi
+        rm -f "$err"
         prev=$(printf '%s' "$output" | jq -r '.previous_maturity')
         new=$(printf '%s' "$output" | jq -r '.new_maturity')
         printf 'info "Promoted: %s → %s"\n' "$prev" "$new"
@@ -85,12 +97,16 @@ define-command sprout-init -docstring 'Initialize sprout frontmatter for current
     write
     evaluate-commands %sh{
         file="$kak_buffile"
-        output=$(sprout init "$file" --format json)
+        err=$(mktemp)
+        output=$(sprout init "$file" --format json 2>"$err")
         rc=$?
         if [ $rc -ne 0 ]; then
-            printf 'fail "sprout init failed"\n'
+            msg=$(jq -r '.message // "unknown error"' < "$err")
+            rm -f "$err"
+            printf 'fail "sprout init: %s"\n' "$msg"
             exit
         fi
+        rm -f "$err"
         maturity=$(printf '%s' "$output" | jq -r '.maturity')
         next_review=$(printf '%s' "$output" | jq -r '.next_review')
         printf 'info "Initialized: %s, next review: %s"\n' "$maturity" "$next_review"
@@ -101,12 +117,16 @@ define-command sprout-init -docstring 'Initialize sprout frontmatter for current
 
 define-command sprout-stats -docstring 'Show vault statistics in info box' %{
     evaluate-commands %sh{
-        output=$(sprout stats --format json)
+        err=$(mktemp)
+        output=$(sprout stats --format json 2>"$err")
         rc=$?
         if [ $rc -ne 0 ]; then
-            printf 'fail "sprout stats failed"\n'
+            msg=$(jq -r '.message // "unknown error"' < "$err")
+            rm -f "$err"
+            printf 'fail "sprout stats: %s"\n' "$msg"
             exit
         fi
+        rm -f "$err"
         total=$(printf '%s' "$output" | jq -r '.total')
         seedling=$(printf '%s' "$output" | jq -r '.seedling')
         budding=$(printf '%s' "$output" | jq -r '.budding')
@@ -120,12 +140,16 @@ define-command sprout-stats -docstring 'Show vault statistics in info box' %{
 
 define-command sprout-list -docstring 'List all tracked notes' %{
     evaluate-commands %sh{
-        output=$(sprout list --format json)
+        err=$(mktemp)
+        output=$(sprout list --format json 2>"$err")
         rc=$?
         if [ $rc -ne 0 ]; then
-            printf 'fail "sprout list failed"\n'
+            msg=$(jq -r '.message // "unknown error"' < "$err")
+            rm -f "$err"
+            printf 'fail "sprout list: %s"\n' "$msg"
             exit
         fi
+        rm -f "$err"
         count=$(printf '%s' "$output" | jq 'length')
         if [ "$count" = "0" ]; then
             printf 'info "No tracked notes"\n'
@@ -140,12 +164,16 @@ define-command sprout-list -docstring 'List all tracked notes' %{
 
 define-command sprout-show -docstring 'Show detailed info about current note' %{
     evaluate-commands %sh{
-        output=$(sprout show "$kak_buffile" --format json)
+        err=$(mktemp)
+        output=$(sprout show "$kak_buffile" --format json 2>"$err")
         rc=$?
         if [ $rc -ne 0 ]; then
-            printf 'fail "sprout show failed"\n'
+            msg=$(jq -r '.message // "unknown error"' < "$err")
+            rm -f "$err"
+            printf 'fail "sprout show: %s"\n' "$msg"
             exit
         fi
+        rm -f "$err"
         tracked=$(printf '%s' "$output" | jq -r '.tracked')
         if [ "$tracked" = "false" ]; then
             printf 'info "Not tracked by sprout"\n'
