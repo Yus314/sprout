@@ -38,9 +38,8 @@ define-command sprout-review -docstring 'List notes due for review' %{
             exit
         fi
         # Build menu entries: each note becomes a menu item that opens the file
-        printf 'menu'
-        printf '%s' "$output" | jq -r '.[] | " %{" + .relative_path + " (" + .maturity + ", interval:" + (.review_interval|tostring) + "d)} %{edit " + .path + "}"'
-        printf '\n'
+        items=$(printf '%s' "$output" | jq -rj '.[] | " %{" + .relative_path + " (" + .maturity + ", interval:" + (.review_interval|tostring) + "d)} %{edit %{" + .path + "}}"')
+        printf 'menu%s\n' "$items"
     }
 }
 
@@ -187,9 +186,8 @@ define-command sprout-list -docstring 'List all tracked notes' %{
             exit
         fi
         # Build menu entries: same pattern as sprout-review
-        printf 'menu'
-        printf '%s' "$output" | jq -r '.[] | " %{" + .relative_path + " (" + .maturity + ", interval:" + (.review_interval|tostring) + "d)} %{edit " + .path + "}"'
-        printf '\n'
+        items=$(printf '%s' "$output" | jq -rj '.[] | " %{" + .relative_path + " (" + .maturity + ", interval:" + (.review_interval|tostring) + "d)} %{edit %{" + .path + "}}"')
+        printf 'menu%s\n' "$items"
     }
 }
 
