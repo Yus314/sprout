@@ -48,7 +48,7 @@ pub enum Commands {
     Done {
         /// Path to the reviewed note file
         file: PathBuf,
-        /// Difficulty rating
+            /// Difficulty rating
         rating: Rating,
     },
     /// Change the maturity level of a note
@@ -89,9 +89,44 @@ pub enum Maturity { Seedling, Budding, Evergreen }
 pub enum OutputFormat { Human, Json }
 ```
 
+## Vault スキャン
+
+`review`, `list`, `stats`, `done`（負荷分散）の4コマンドは vault 全体をスキャンする。
+
+### スキャン対象
+
+- **拡張子**: `.md` ファイルのみ
+- **再帰**: vault パス以下のサブディレクトリを再帰的に走査する
+- **シンボリックリンク**: 追跡する（Obsidian 互換）。`walkdir` の循環検出に依存し、循環リンクはスキップする。重複防止のためパスを正規化（`canonicalize`）し、同一実体が複数回出現しないようにする
+- **除外ディレクトリ**: `config.exclude_dirs`（デフォルト: `[".git", ".obsidian", ".trash"]`）に一致するディレクトリ名はスキャンから除外する
+
+### トラッキング判定
+
+ノートが sprout でトラッキングされているかの判定基準は **`maturity` フィールドの存在** とする。
+
+- `maturity` が存在する → トラッキング中（`tracked: true`）
+- `maturity` が存在しない → 未トラッキング（`tracked: false`）
+
+`maturity` があっても他の必須フィールド（`ease`, `review_interval`, `next_review` 等）が欠けている場合、各コマンドは以下のように振る舞う:
+
+| コマンド | `next_review` なし | `ease`/`review_interval` なし |
+|----------|--------------------|-------------------------------|
+| `list`   | 表示する（`maturity` のみで動作可能） | 表示する |
+| `stats`  | `total`/maturity 別には計上、`due_today`/`overdue` からは除外 | maturity 別に計上 |
+| `review` | スキップ（due 判定不能） | スキップ |
+| `done`   | `no_frontmatter` エラー。`sprout init` による補完を促す | `no_frontmatter` エラー |
+
+### `relative_path` の基準
+
+JSON 出力の `relative_path` は vault ルートからの相対パスとする。
+
 ## JSON出力形式
 
 `--format json` フラグはKakouneプラグイン統合に不可欠。KakouneのシェルブロックがJSON出力をパースし、メニューやinfoボックスに表示する。
+
+### `sprout review` ソート順
+
+`next_review` 昇順（overdue が長いノートが先頭）。
 
 ### `sprout review --format json` 出力例
 
@@ -108,12 +143,15 @@ pub enum OutputFormat { Human, Json }
 ]
 ```
 
+`done` は due でないノート（`next_review` が未来）にも実行可能。`delayed = max(0, today - next_review)` により `delayed = 0` で通常の SRS 計算が走る。
+
 ### `sprout done --format json` 出力例
 
 ```json
 {
   "path": "/home/kaki/notes/zettelkasten/note1.md",
   "maturity": "seedling",
+  "last_review": "2026-02-26",
   "new_interval": 5,
   "next_review": "2026-03-02",
   "ease": 2.5
@@ -133,7 +171,17 @@ pub enum OutputFormat { Human, Json }
 }
 ```
 
+`due_today` と `overdue` は排他的:
+- `overdue`: `next_review < today`（過去に予定日を過ぎたノート）
+- `due_today`: `next_review == today`（今日が予定日のノート）
+- `review` コマンドが返すノート数は `due_today + overdue` と一致する
+
 ### `sprout promote --format json` 出力例
+
+`promote` は `maturity` フィールドのみを変更する。`ease`, `review_interval`, `next_review` 等の SRS 値は一切変更しない。SRS 値の調整は `done` コマンドの責務とする。
+
+- **任意方向の変更を許可**: evergreen → seedling のような降格も可能。コマンド名は `promote` だが、実質的には maturity ラベルの書き換え操作
+- **同一 maturity への promote は no-op 成功**: `previous_maturity == new_maturity` として exit 0 を返す（冪等性）
 
 ```json
 {
@@ -149,6 +197,8 @@ pub enum OutputFormat { Human, Json }
 
 ### `sprout init --format json` 出力例
 
+新規初期化（ケースA・B）:
+
 ```json
 {
   "path": "/home/kaki/notes/zettelkasten/note1.md",
@@ -160,6 +210,27 @@ pub enum OutputFormat { Human, Json }
   "created": "2026-02-25"
 }
 ```
+
+部分補完（ケースC — 一部フィールドが欠けていた場合）:
+
+```json
+{
+  "path": "/home/kaki/notes/zettelkasten/note1.md",
+  "relative_path": "zettelkasten/note1.md",
+  "maturity": "seedling",
+  "review_interval": 1,
+  "next_review": "2026-02-26",
+  "ease": 2.5,
+  "created": "2026-02-25",
+  "fields_added": ["ease", "next_review"]
+}
+```
+
+`fields_added` は補完されたフィールド名のリスト。全フィールドが新規追加された場合（ケースA・B）はこのキーを含まない。
+
+### `sprout list` ソート順
+
+`relative_path` のアルファベット昇順。
 
 ### `sprout list --format json` 出力例
 
@@ -179,6 +250,8 @@ pub enum OutputFormat { Human, Json }
 ```
 
 ### `sprout show --format json` 出力例
+
+`days_until_review` は `next_review - today` の符号付き日数。overdue なら負数（例: 3日超過で `-3`）。
 
 トラッキング中のノート:
 
@@ -219,9 +292,10 @@ pub enum OutputFormat { Human, Json }
 | エラーコード | 説明 |
 |-------------|------|
 | `file_not_found` | 指定されたファイルが存在しない |
+| `outside_vault` | 指定されたファイルが vault ディレクトリ外にある |
 | `no_frontmatter` | sprout フロントマターが見つからない |
 | `vault_not_found` | vault パスが解決できない |
-| `already_initialized` | 既にフロントマターが存在する（`init` 時） |
+| `already_initialized` | 全sproutフィールドが既に存在する（`init` 時） |
 | `parse_error` | フロントマターのパースに失敗 |
 
 ## ソースファイル構成
@@ -231,7 +305,7 @@ src/
 ├── main.rs          # エントリポイント
 ├── cli.rs           # clap derive定義
 ├── config.rs        # 設定読み込み (~/.config/sprout/config.toml)
-├── frontmatter.rs   # YAMLフロントマターのパース（serde_yaml_ng）と文字列書き戻し
+├── frontmatter.rs   # YAMLフロントマターのパース（gray_matter）と文字列書き戻し
 ├── note.rs          # ノート検出、読み書き
 ├── links.rs         # [[wiki-link]] パースとリンクカウント
 ├── srs.rs           # SRSアルゴリズム（遅延・リンク・負荷分散）

@@ -25,24 +25,28 @@ ease: 2.5                # ease factor
 | `review_interval` | u32 | `1` | 現在のレビュー間隔（日数） |
 | `next_review` | date | 翌日 | 次のレビュー予定日 |
 | `ease` | f64 | `2.5` | ease factor |
-| `tags` | list | `["review"]` | タグリスト。sprout は読み取りのみ、書き戻し対象外 |
 
 ## Obsidian互換性
 
 未知のYAMLキー（`aliases`, `cssclasses` など）、コメント、キー順序、クォートスタイルはラウンドトリップ時に完全に保持される必要がある。
 
-### 方針: 読み取りは serde、書き戻しは文字列操作
+### 方針: 分離は gray_matter、書き戻しは文字列操作
 
-`serde_yaml` (0.9) は非推奨・アーカイブ済みのため使用しない。後継の `serde_yaml_ng` を読み取り専用で使用する。書き戻しはYAML全体を再シリアライズせず、生テキスト上で sprout フィールドのみを文字列操作で更新する。
+フロントマターの分離・パースには [`gray_matter`](https://lib.rs/crates/gray_matter) クレートを使用する。書き戻しはYAML全体を再シリアライズせず、生テキスト上で sprout フィールドのみを文字列操作で更新する。
+
+`gray_matter` は `ParsedEntity` として raw YAML 文字列（`matter`）・パース済みデータ（`data`）・本文（`content`）を返すため、sprout の「読み取りは serde、書き戻しは文字列操作」方針にそのまま適合する。デリミタ検出（`---`）・エッジケース処理（末尾空白、EOF）はライブラリ側で処理される。
 
 **この方式の利点:**
 - コメント・キー順序・書式が完全に保持される（YAMLを再シリアライズしないため）
-- 読み取り側は serde の型安全性を活用できる
-- 純Rust依存のみ（C依存なし、Nixビルドに適合）
-- sprout が管理するフィールドは6-7個と限定的で、文字列操作の複雑さが抑えられる
+- 読み取り側は serde の型安全性を活用できる（`gray_matter` は `DeserializeOwned` 経由でデシリアライズ）
+- フロントマター分離のエッジケース処理をライブラリに委ねられる
+- 純Rust依存のみ（`yaml-rust2`, `serde`, `thiserror`。C依存なし、Nixビルドに適合）
+- sprout が管理するフィールドは6個と限定的で、文字列操作の複雑さが抑えられる
 
 **不採用の代替案:**
+- `serde_yaml_ng` + 自前分離: フロントマター分離のエッジケースを自前で処理する必要がある
 - `serde_yml`: RUSTSEC-2025-0068（unsound/segfault）により使用禁止
+- `yaml-front-matter`: `serde_yaml` 0.8（非推奨）に依存。raw YAML 文字列を返さない
 - `rust-yaml` (RoundTripConstructor): v0.0.5、採用実績が極めて少なく基盤依存にはリスクが高い
 - `fyaml` (libfyaml): C依存がNixパッケージングを複雑化する
 
@@ -57,26 +61,25 @@ pub struct SproutFrontmatter {
     pub review_interval: Option<u32>,       // 日数
     pub next_review: Option<NaiveDate>,
     pub ease: Option<f64>,                  // ease factor, default 2.5
-    #[serde(default)]
-    pub tags: Vec<String>,
 }
 
 pub struct ParsedNote {
-    pub frontmatter_raw: String,           // 元のYAMLテキスト（書き戻し時の原本）
-    pub sprout: SproutFrontmatter,         // serde_yaml_ng で抽出した sprout フィールド
-    pub body: String,                      // 閉じ --- 以降のすべて
+    pub frontmatter_raw: String,           // gray_matter の matter フィールド（書き戻し時の原本）
+    pub sprout: SproutFrontmatter,         // gray_matter の data フィールド（serde でデシリアライズ済み）
+    pub body: String,                      // gray_matter の content フィールド
 }
 ```
 
 ## パーシングアルゴリズム
 
+`gray_matter` にフロントマターの分離・デシリアライズを委ねる:
+
 1. ファイルを文字列として読み込み
 2. `\r\n` を `\n` に正規化する（書き戻し時も `\n` のみで出力する）
-3. `---\n` で始まるか確認
-4. 閉じ `---\n`（2番目の出現）を検索
-5. デリミタ間のYAMLテキストを `frontmatter_raw` として保存
-6. `serde_yaml_ng::from_str` で `SproutFrontmatter` にデシリアライズ（未知キーは `#[serde(deny_unknown_fields)]` なしで無視）
-7. body（2番目の `---` 以降のすべて）を保存
+3. `Matter::<YAML>::new().parse::<SproutFrontmatter>(input)` を呼び出す
+4. 返却された `ParsedEntity` から `matter`（raw YAML）、`data`（パース済み）、`content`（本文）を取得
+5. `data` が `None` の場合、フロントマターなしとして扱う（`sprout init` のケースA）
+6. 未知キーは `#[serde(deny_unknown_fields)]` なしで無視される
 
 ## 書き戻しアルゴリズム
 
@@ -111,17 +114,28 @@ fn replace_field(yaml: &str, key: &str, new_value: &str) -> String;
 fn append_field(yaml: &str, key: &str, value: &str) -> String;
 ```
 
-### `sprout init` の3ケース
+### `sprout init` のケース分類
+
+`sprout init` が管理するフィールド: `maturity`, `created`, `last_review`, `review_interval`, `next_review`, `ease`（計6フィールド）。
+
+init はフィールド単位で存在を確認し、欠けているフィールドのみデフォルト値で追加する。既存フィールドの値は変更しない。
+
+ファイル自体が存在しない場合は `file_not_found` エラー（exit 1）。`init` はファイルの新規作成を行わない。
 
 | ケース | 状態 | init の挙動 |
 |---|---|---|
-| A | フロントマターなし | `---` ブロックを新規作成し、全sproutフィールドを挿入 |
-| B | フロントマターあり、sproutフィールドなし | 既存ブロック末尾（閉じ `---` の直前）にsproutフィールドを追加 |
-| C | sproutフィールドあり | `already_initialized` エラー |
+| A | フロントマターなし | `---` ブロックを新規作成し、全6フィールドを挿入 |
+| B | フロントマターあり、sproutフィールドなし | 既存ブロック末尾（閉じ `---` の直前）に全6フィールドを追加 |
+| C | フロントマターあり、sproutフィールドが一部存在 | 欠けているフィールドのみデフォルト値で追加。stderr に補完した旨を警告する |
+| D | 全6フィールドが存在 | `already_initialized` エラー |
 
-「sproutフィールドあり」の判定基準: `maturity` キーの存在。
+「初期化済み」の判定基準: 6フィールド **全て** が存在すること。
 
-`sprout init` が書くフィールド: `maturity`, `created`, `last_review`, `review_interval`, `next_review`, `ease`。
+ケースCの警告メッセージ例:
+
+```
+warning: missing fields added with defaults: ease, next_review
+```
 
 ### 書き戻し時の注意事項
 
