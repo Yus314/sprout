@@ -10,10 +10,10 @@ last_review: 2026-02-25
 review_interval: 1       # 日数
 next_review: 2026-02-26
 ease: 2.5                # ease factor
-tags:
-  - review
 ---
 ```
+
+`tags` など他のYAMLキーはユーザーが自由に追加できる。sprout はこれらを読み取りのみ行い、書き戻し時に変更しない。
 
 ## フィールド定義
 
@@ -25,7 +25,7 @@ tags:
 | `review_interval` | u32 | `1` | 現在のレビュー間隔（日数） |
 | `next_review` | date | 翌日 | 次のレビュー予定日 |
 | `ease` | f64 | `2.5` | ease factor |
-| `tags` | list | `["review"]` | タグリスト |
+| `tags` | list | `["review"]` | タグリスト。sprout は読み取りのみ、書き戻し対象外 |
 
 ## Obsidian互換性
 
@@ -71,33 +71,59 @@ pub struct ParsedNote {
 ## パーシングアルゴリズム
 
 1. ファイルを文字列として読み込み
-2. `---\n` で始まるか確認
-3. 閉じ `---\n`（2番目の出現）を検索
-4. デリミタ間のYAMLテキストを `frontmatter_raw` として保存
-5. `serde_yaml_ng::from_str` で `SproutFrontmatter` にデシリアライズ（未知キーは `#[serde(deny_unknown_fields)]` なしで無視）
-6. body（2番目の `---` 以降のすべて）を保存
+2. `\r\n` を `\n` に正規化する（書き戻し時も `\n` のみで出力する）
+3. `---\n` で始まるか確認
+4. 閉じ `---\n`（2番目の出現）を検索
+5. デリミタ間のYAMLテキストを `frontmatter_raw` として保存
+6. `serde_yaml_ng::from_str` で `SproutFrontmatter` にデシリアライズ（未知キーは `#[serde(deny_unknown_fields)]` なしで無視）
+7. body（2番目の `---` 以降のすべて）を保存
 
 ## 書き戻しアルゴリズム
 
 `frontmatter_raw` に対して文字列操作で sprout フィールドのみ更新する。YAML全体の再シリアライズは行わない。
 
 1. `frontmatter_raw`（元のYAMLテキスト）を取得
-2. sprout 管理キー (`maturity`, `last_review`, `review_interval`, `next_review`, `ease`) について:
+2. sprout 管理キー (`maturity`, `last_review`, `review_interval`, `next_review`, `ease`) について（`ease` は `{:.2}` 小数2桁でフォーマットする。±0.15の離散変動のみのため2桁で十分かつ f64 丸め誤差を回避）:
    - キーが既存なら、該当行を正規表現で値部分のみ置換（`key: old_value` → `key: new_value`）
    - キーが存在しなければ、YAMLブロック末尾に行を追加
 3. 再構築: `---\n{updated_yaml}\n---\n{body}`
 
 ### 行置換の正規表現パターン
 
+3グループパターンでインラインコメントを保持する:
+
+```
+^({key}\s*:\s*)(\S+)(.*)$
+```
+
+- Group 1: キー＋コロン＋空白（保持）
+- Group 2: 値（空白なしの単一トークン — sprout管理値はすべてこの条件を満たす）
+- Group 3: 値以降の残り（空白＋インラインコメント、保持）
+
+置換結果: `${1}{new_value}${3}`
+
 ```rust
-// 例: "review_interval: 3" → "review_interval: 7"
-// パターン: ^{key}:\s+.*$ を ^{key}: {new_value}$ に置換
+/// 既存キーの値を置換する。インラインコメントは保持される。
+/// 例: "review_interval: 3  # 日数" → "review_interval: 7  # 日数"
 fn replace_field(yaml: &str, key: &str, new_value: &str) -> String;
 
-// 例: キーが存在しない場合、末尾に追加
+/// キーが存在しない場合、YAMLブロック末尾に `{key}: {value}` 行を追加する。
 fn append_field(yaml: &str, key: &str, value: &str) -> String;
 ```
 
-コメント付きの行（`review_interval: 3  # 日数`）でも、値部分のみが置換されインラインコメントは保持される。
+### `sprout init` の3ケース
 
-フロントマターのないファイルはsproutフィールドに `None` を返し、`sprout init` でフロントマターブロックを新規追加する。
+| ケース | 状態 | init の挙動 |
+|---|---|---|
+| A | フロントマターなし | `---` ブロックを新規作成し、全sproutフィールドを挿入 |
+| B | フロントマターあり、sproutフィールドなし | 既存ブロック末尾（閉じ `---` の直前）にsproutフィールドを追加 |
+| C | sproutフィールドあり | `already_initialized` エラー |
+
+「sproutフィールドあり」の判定基準: `maturity` キーの存在。
+
+`sprout init` が書くフィールド: `maturity`, `created`, `last_review`, `review_interval`, `next_review`, `ease`。
+
+### 書き戻し時の注意事項
+
+- **クォートスタイル**: sprout はクォートなしで値を書く。元のクォートスタイル（`"seedling"` vs `seedling`）は保持しない
+- **複数フィールド同時更新**: `replace_field` を順次適用する。各フィールドは独立に「置換 or 追加」にフォールバックする

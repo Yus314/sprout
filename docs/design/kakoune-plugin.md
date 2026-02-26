@@ -49,9 +49,10 @@ map global user s ':enter-user-mode sprout<ret>' -docstring 'sprout mode'
 
 define-command sprout-review -docstring 'List notes due for review' %{
     evaluate-commands %sh{
-        output=$(sprout review --format json 2>&1)
-        if [ $? -ne 0 ]; then
-            printf 'fail "sprout review failed: %s"\n' "$(printf '%s' "$output" | head -1)"
+        output=$(sprout review --format json)
+        rc=$?
+        if [ $rc -ne 0 ]; then
+            printf 'fail "sprout review failed"\n'
             exit
         fi
         count=$(printf '%s' "$output" | jq 'length')
@@ -71,9 +72,10 @@ define-command sprout-done -params 1 -docstring 'sprout-done <hard|good|easy>: r
     evaluate-commands %sh{
         file="$kak_buffile"
         rating="$1"
-        output=$(sprout done "$file" "$rating" --format json 2>&1)
-        if [ $? -ne 0 ]; then
-            printf 'fail "sprout done failed: %s"\n' "$(printf '%s' "$output" | head -1)"
+        output=$(sprout done "$file" "$rating" --format json)
+        rc=$?
+        if [ $rc -ne 0 ]; then
+            printf 'fail "sprout done failed"\n'
             exit
         fi
         new_interval=$(printf '%s' "$output" | jq -r '.new_interval')
@@ -97,9 +99,10 @@ define-command sprout-promote -params 1 -docstring 'sprout-promote <seedling|bud
     evaluate-commands %sh{
         file="$kak_buffile"
         maturity="$1"
-        output=$(sprout promote "$file" "$maturity" --format json 2>&1)
-        if [ $? -ne 0 ]; then
-            printf 'fail "sprout promote failed: %s"\n' "$(printf '%s' "$output" | head -1)"
+        output=$(sprout promote "$file" "$maturity" --format json)
+        rc=$?
+        if [ $rc -ne 0 ]; then
+            printf 'fail "sprout promote failed"\n'
             exit
         fi
         prev=$(printf '%s' "$output" | jq -r '.previous_maturity')
@@ -120,9 +123,10 @@ define-command sprout-init -docstring 'Initialize sprout frontmatter for current
     write
     evaluate-commands %sh{
         file="$kak_buffile"
-        output=$(sprout init "$file" --format json 2>&1)
-        if [ $? -ne 0 ]; then
-            printf 'fail "sprout init failed: %s"\n' "$(printf '%s' "$output" | head -1)"
+        output=$(sprout init "$file" --format json)
+        rc=$?
+        if [ $rc -ne 0 ]; then
+            printf 'fail "sprout init failed"\n'
             exit
         fi
         maturity=$(printf '%s' "$output" | jq -r '.maturity')
@@ -135,9 +139,10 @@ define-command sprout-init -docstring 'Initialize sprout frontmatter for current
 
 define-command sprout-stats -docstring 'Show vault statistics in info box' %{
     evaluate-commands %sh{
-        output=$(sprout stats --format json 2>&1)
-        if [ $? -ne 0 ]; then
-            printf 'fail "sprout stats failed: %s"\n' "$(printf '%s' "$output" | head -1)"
+        output=$(sprout stats --format json)
+        rc=$?
+        if [ $rc -ne 0 ]; then
+            printf 'fail "sprout stats failed"\n'
             exit
         fi
         total=$(printf '%s' "$output" | jq -r '.total')
@@ -153,9 +158,10 @@ define-command sprout-stats -docstring 'Show vault statistics in info box' %{
 
 define-command sprout-list -docstring 'List all tracked notes' %{
     evaluate-commands %sh{
-        output=$(sprout list --format json 2>&1)
-        if [ $? -ne 0 ]; then
-            printf 'fail "sprout list failed: %s"\n' "$(printf '%s' "$output" | head -1)"
+        output=$(sprout list --format json)
+        rc=$?
+        if [ $rc -ne 0 ]; then
+            printf 'fail "sprout list failed"\n'
             exit
         fi
         count=$(printf '%s' "$output" | jq 'length')
@@ -172,9 +178,10 @@ define-command sprout-list -docstring 'List all tracked notes' %{
 
 define-command sprout-show -docstring 'Show detailed info about current note' %{
     evaluate-commands %sh{
-        output=$(sprout show "$kak_buffile" --format json 2>&1)
-        if [ $? -ne 0 ]; then
-            printf 'fail "sprout show failed: %s"\n' "$(printf '%s' "$output" | head -1)"
+        output=$(sprout show "$kak_buffile" --format json)
+        rc=$?
+        if [ $rc -ne 0 ]; then
+            printf 'fail "sprout show failed"\n'
             exit
         fi
         tracked=$(printf '%s' "$output" | jq -r '.tracked')
@@ -263,6 +270,6 @@ hook global User SproutDone %{
 - **バッファリロード**: `sprout done` と `sprout promote` 後に `edit!` を発行し、更新されたフロントマターを反映
 - **バッファ保存の保証**: ファイルを変更する3コマンド（`sprout-done`, `sprout-promote`, `sprout-init`）は `evaluate-commands %sh{...}` の前に `write` を発行し、未保存の編集内容がCLIのファイル書き換えで消失するのを防ぐ
 - **menuコマンド**: Kakouneビルトインの `menu` を使用して選択可能なノート一覧を表示（`sprout-review`, `sprout-list`）
-- **エラー分離の安全性**: CLIはエラー時にstdoutを空にする規約のため、`2>&1` でstdoutとstderrを結合してもJSONパースが壊れない
+- **エラー分離の安全性**: stdout のみをキャプチャし、stderr はキャプチャしない。CLIが将来 warning を stderr に出力しても JSON パースに影響しない。エラー時は終了コードで判定し、stderr の内容はKakouneの `*debug*` バッファに流れる
 - **JSON一貫性**: 全コマンドで `--format json` を使用し、human出力形式への依存を排除。プラグイン側で表示文字列を構築する
 - **フックのエディタ層実装**: CLIは純粋なデータ変換に徹し、ワークフロー拡張はKakouneの`trigger-user-hook`で実現。他エディタも各自のイベント機構（Neovim: `User` autocmd、Emacs: `run-hooks`）で同等の実装が可能
