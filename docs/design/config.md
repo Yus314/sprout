@@ -7,11 +7,12 @@
 ## 形式
 
 ```toml
-# vault_path = "/home/kaki/notes"  # デフォルト: カレントディレクトリ
-# max_interval = 90                # 最大インターバル（日数）
-# default_ease = 2.5               # 初期ease
-# link_weight = 0.1                # リンク考慮の重み（0で無効化）
-# load_balance = true              # 負荷分散の有効/無効
+# vault_path = "/home/kaki/notes"              # デフォルト: カレントディレクトリ
+# max_interval = 90                            # 最大インターバル（日数）
+# default_ease = 2.5                           # 初期ease
+# link_weight = 0.1                            # リンク考慮の重み（0で無効化）
+# load_balance = true                          # 負荷分散の有効/無効
+# exclude_dirs = [".git", ".obsidian", ".trash"]  # スキャン除外ディレクトリ
 ```
 
 ## 設定パラメータ
@@ -23,6 +24,7 @@
 | `default_ease` | f64 | `2.5` | 新規ノートの初期ease factor |
 | `link_weight` | f64 | `0.1` | リンクファクターの重み（0で無効化） |
 | `load_balance` | bool | `true` | 負荷分散の有効化 |
+| `exclude_dirs` | list | `[".git", ".obsidian", ".trash"]` | vault スキャン時に除外するディレクトリ名 |
 
 ## Vault パス解決順序
 
@@ -41,6 +43,7 @@ pub struct Config {
     pub default_ease: Option<f64>,        // default 2.5
     pub link_weight: Option<f64>,         // default 0.1
     pub load_balance: Option<bool>,       // default true
+    pub exclude_dirs: Option<Vec<String>>, // default [".git", ".obsidian", ".trash"]
 }
 
 pub fn load_config() -> Result<Config>;
