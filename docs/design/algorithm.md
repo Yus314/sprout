@@ -34,15 +34,22 @@ Easy:
 
 ## リンクファクター
 
-Markdown `[[wiki-link]]` 構文を解析し、ノートの接続度をeaseに反映する:
+ノート本文（frontmatter を除く）からリンクを抽出し、接続度をeaseに反映する:
 
 ```
-link_count    = ノートからの [[wiki-link]] の数
+link_count    = ノート本文中のユニークな内部リンク数
 link_factor   = min(1.0, ln(link_count + 0.5) / ln(64))  # 0.0-1.0に正規化
 link_weight   = config.link_weight (デフォルト 0.1)
 
 effective_ease = ease × (1.0 + link_weight × link_factor)
 ```
+
+### カウント規則
+
+- **対象形式**: `[[wiki-link]]` および `[text](path)` の両方
+- **重複排除**: 同じリンク先が複数回出現してもユニーク数で1と数える
+- **本文のみ**: YAML frontmatter 内のリンクは除外する
+- **外部URL除外**: `http://` または `https://` で始まるリンク先は除外する
 
 ### 値の例
 
