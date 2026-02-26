@@ -66,7 +66,7 @@ define-command _sprout-fzf-select -hidden -params 1 \
         preview_script=$(mktemp "${TMPDIR:-/tmp}/sprout-fzf-preview-XXXXXX.sh")
         cat > "$preview_script" << 'PREVIEW_OUTER'
 #!/bin/sh
-awk 'NR==1&&/^---/{f=1;next} f&&/^---/{f=0;next} !f{if(++n>50)exit}1' "$1" | \
+awk 'NR==1&&/^---/{f=1;next} f&&/^---/{f=0;next} f{next} {if(++n>50)exit;print}' "$1" | \
     if command -v bat >/dev/null 2>&1; then
         bat -l md --style=plain --color=always --paging=never
     else
