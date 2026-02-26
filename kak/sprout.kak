@@ -4,15 +4,22 @@
 # ─── User mode ───────────────────────────────────────────────────────
 
 declare-option str sprout_vault
+declare-option str sprout_fzf_opts ''
 declare-user-mode sprout
 
 map global user s ':enter-user-mode sprout<ret>' -docstring 'sprout mode'
 
 # ─── Commands ────────────────────────────────────────────────────────
 
-define-command sprout-review -docstring 'List notes due for review' %{
+define-command _sprout-fzf-select -hidden -params 1 \
+    -docstring 'internal: launch fzf for sprout review/list' %{
     evaluate-commands %sh{
-        # Resolve vault: kak option > SPROUT_VAULT env > dirname of buffile
+        subcmd="$1"
+        session="$kak_session"
+        client="$kak_client"
+        fzf_opts="$kak_opt_sprout_fzf_opts"
+
+        # Resolve vault
         if [ -n "$kak_opt_sprout_vault" ]; then
             vault="$kak_opt_sprout_vault"
         elif [ -n "$SPROUT_VAULT" ]; then
@@ -22,25 +29,73 @@ define-command sprout-review -docstring 'List notes due for review' %{
         else
             vault="$PWD"
         fi
+
+        # Run sprout subcommand
         err=$(mktemp)
-        output=$(sprout review --vault "$vault" --format json 2>"$err")
+        output=$(sprout "$subcmd" --vault "$vault" --format json 2>"$err")
         rc=$?
         if [ $rc -ne 0 ]; then
             msg=$(jq -r '.message // "unknown error"' < "$err")
             rm -f "$err"
-            printf 'fail "sprout review: %s"\n' "$msg"
+            printf 'fail "sprout %s: %s"\n' "$subcmd" "$msg"
             exit
         fi
         rm -f "$err"
+
         count=$(printf '%s' "$output" | jq 'length')
         if [ "$count" = "0" ]; then
-            printf 'info "No notes due for review today"\n'
+            case "$subcmd" in
+                review) printf 'info "No notes due for review today"\n' ;;
+                list)   printf 'info "No tracked notes"\n' ;;
+            esac
             exit
         fi
-        # Build menu entries: each note becomes a menu item that opens the file
-        items=$(printf '%s' "$output" | jq -rj '.[] | " %{" + .relative_path + " (" + .maturity + ", interval:" + (.review_interval|tostring) + "d)} %{edit %{" + .path + "}}"')
-        printf 'menu%s\n' "$items"
+
+        # fzf unavailable → fallback to menu
+        if ! command -v fzf >/dev/null 2>&1; then
+            items=$(printf '%s' "$output" | jq -rj '.[] | " %{" + .relative_path + " (" + .maturity + ", interval:" + (.review_interval|tostring) + "d)} %{edit %{" + .path + "}}"')
+            printf 'menu%s\n' "$items"
+            exit
+        fi
+
+        # Write fzf input to temp file: path<TAB>label per line
+        candidates_file=$(mktemp "${TMPDIR:-/tmp}/sprout-fzf-cands-XXXXXX")
+        printf '%s' "$output" | jq -r '.[] | .path + "\t" + .relative_path + " (" + .maturity + ", interval:" + (.review_interval|tostring) + "d)"' > "$candidates_file"
+
+        # Generate temporary script
+        script=$(mktemp "${TMPDIR:-/tmp}/sprout-fzf-XXXXXX.sh")
+        cat > "$script" << 'OUTER'
+#!/bin/sh
+candidates_file="$1"
+session="$2"
+client="$3"
+fzf_opts="$4"
+script="$5"
+selected=$(fzf \
+    --delimiter='\t' --with-nth=2.. \
+    --preview='head -50 {1}' \
+    --preview-window=right:50%:wrap \
+    $fzf_opts < "$candidates_file")
+if [ -n "$selected" ]; then
+    file=$(printf '%s' "$selected" | cut -f1)
+    printf 'evaluate-commands -client %s edit %%{%s}\n' "$client" "$file" | kak -p "$session"
+fi
+rm -f "$candidates_file" "$script"
+OUTER
+        chmod +x "$script"
+
+        if [ -n "$TMUX" ]; then
+            printf "nop %%sh{ tmux popup -E -w 80%% -h 80%% sh '%s' '%s' '%s' '%s' '%s' '%s' & }\n" \
+                "$script" "$candidates_file" "$session" "$client" "$fzf_opts" "$script"
+        else
+            printf "terminal sh '%s' '%s' '%s' '%s' '%s' '%s'\n" \
+                "$script" "$candidates_file" "$session" "$client" "$fzf_opts" "$script"
+        fi
     }
+}
+
+define-command sprout-review -docstring 'List notes due for review' %{
+    _sprout-fzf-select review
 }
 
 define-command sprout-done -params 1 -docstring 'sprout-done <hard|good|easy>: rate the current note' %{
@@ -159,36 +214,7 @@ define-command sprout-stats -docstring 'Show vault statistics in info box' %{
 }
 
 define-command sprout-list -docstring 'List all tracked notes' %{
-    evaluate-commands %sh{
-        # Resolve vault: kak option > SPROUT_VAULT env > dirname of buffile
-        if [ -n "$kak_opt_sprout_vault" ]; then
-            vault="$kak_opt_sprout_vault"
-        elif [ -n "$SPROUT_VAULT" ]; then
-            vault="$SPROUT_VAULT"
-        elif [ -n "$kak_buffile" ] && [ -f "$kak_buffile" ]; then
-            vault=$(dirname "$kak_buffile")
-        else
-            vault="$PWD"
-        fi
-        err=$(mktemp)
-        output=$(sprout list --vault "$vault" --format json 2>"$err")
-        rc=$?
-        if [ $rc -ne 0 ]; then
-            msg=$(jq -r '.message // "unknown error"' < "$err")
-            rm -f "$err"
-            printf 'fail "sprout list: %s"\n' "$msg"
-            exit
-        fi
-        rm -f "$err"
-        count=$(printf '%s' "$output" | jq 'length')
-        if [ "$count" = "0" ]; then
-            printf 'info "No tracked notes"\n'
-            exit
-        fi
-        # Build menu entries: same pattern as sprout-review
-        items=$(printf '%s' "$output" | jq -rj '.[] | " %{" + .relative_path + " (" + .maturity + ", interval:" + (.review_interval|tostring) + "d)} %{edit %{" + .path + "}}"')
-        printf 'menu%s\n' "$items"
-    }
+    _sprout-fzf-select list
 }
 
 define-command sprout-show -docstring 'Show detailed info about current note' %{
