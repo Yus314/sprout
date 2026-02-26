@@ -254,6 +254,163 @@ fn promote_no_frontmatter_errors() {
         .stderr(predicate::str::contains("no_frontmatter"));
 }
 
+// ── done edge cases ───────────────────────────────────────────
+
+#[test]
+fn done_hard_reduces_interval() {
+    let (dir, file) = setup_vault("tracked.md");
+    sprout()
+        .args(["done", file.to_str().unwrap(), "hard", "--vault", dir.path().to_str().unwrap(), "--format", "json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"new_interval\":"))
+        .stdout(predicate::str::contains("\"ease\":"));
+
+    let content = fs::read_to_string(&file).unwrap();
+    assert!(content.contains("last_review:"));
+    // Hard should reduce ease below 2.50
+    assert!(!content.contains("ease: 2.50"));
+}
+
+#[test]
+fn done_easy_increases_ease() {
+    let (dir, file) = setup_vault("tracked.md");
+    sprout()
+        .args(["done", file.to_str().unwrap(), "easy", "--vault", dir.path().to_str().unwrap(), "--format", "json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"ease\":"));
+
+    let content = fs::read_to_string(&file).unwrap();
+    assert!(content.contains("ease: 2.65")); // 2.50 + 0.15
+}
+
+// ── promote edge cases ────────────────────────────────────────
+
+#[test]
+fn promote_to_evergreen() {
+    let (dir, file) = setup_vault("tracked.md");
+    sprout()
+        .args(["promote", file.to_str().unwrap(), "evergreen", "--vault", dir.path().to_str().unwrap(), "--format", "json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"new_maturity\":\"evergreen\""));
+
+    let content = fs::read_to_string(&file).unwrap();
+    assert!(content.contains("maturity: evergreen"));
+}
+
+#[test]
+fn promote_file_not_found() {
+    let dir = tempfile::TempDir::new().unwrap();
+    sprout()
+        .args(["promote", "/nonexistent.md", "budding", "--vault", dir.path().to_str().unwrap(), "--format", "json"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("file_not_found"));
+}
+
+// ── review edge cases ─────────────────────────────────────────
+
+#[test]
+fn review_empty_vault() {
+    let dir = tempfile::TempDir::new().unwrap();
+    fs::write(dir.path().join("empty.md"), "No frontmatter at all\n").unwrap();
+    sprout()
+        .args(["review", "--vault", dir.path().to_str().unwrap(), "--format", "json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("[]")); // empty JSON array
+}
+
+// ── stats edge cases ──────────────────────────────────────────
+
+#[test]
+fn stats_empty_vault() {
+    let dir = tempfile::TempDir::new().unwrap();
+    sprout()
+        .args(["stats", "--vault", dir.path().to_str().unwrap(), "--format", "json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"total\":0"));
+}
+
+// ── list edge cases ───────────────────────────────────────────
+
+#[test]
+fn list_maturity_filter_no_match() {
+    let dir = setup_vault_multi(&["tracked.md"]); // seedling only
+    let output = sprout()
+        .args(["list", "--vault", dir.path().to_str().unwrap(), "--maturity", "evergreen", "--format", "json"])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains("[]")); // empty array
+}
+
+#[test]
+fn list_empty_vault() {
+    let dir = tempfile::TempDir::new().unwrap();
+    sprout()
+        .args(["list", "--vault", dir.path().to_str().unwrap(), "--format", "json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("[]"));
+}
+
+// ── init edge cases ───────────────────────────────────────────
+
+#[test]
+fn init_file_outside_vault() {
+    let vault = tempfile::TempDir::new().unwrap();
+    let outside = tempfile::TempDir::new().unwrap();
+    let file = outside.path().join("note.md");
+    fs::write(&file, "Content\n").unwrap();
+    sprout()
+        .args(["init", file.to_str().unwrap(), "--vault", vault.path().to_str().unwrap(), "--format", "json"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("outside_vault"));
+}
+
+#[test]
+fn init_frontmatter_no_sprout_fields() {
+    // Case B: frontmatter exists but no sprout fields → should succeed like Case A
+    let (dir, file) = setup_vault("untracked.md");
+    sprout()
+        .args(["init", file.to_str().unwrap(), "--vault", dir.path().to_str().unwrap(), "--format", "json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"maturity\":\"seedling\""));
+
+    let content = fs::read_to_string(&file).unwrap();
+    assert!(content.contains("maturity: seedling"));
+    assert!(content.contains("tags: [test]")); // preserved existing fields
+}
+
+// ── show edge cases ───────────────────────────────────────────
+
+#[test]
+fn show_partial_note() {
+    let (dir, file) = setup_vault("partial.md");
+    sprout()
+        .args(["show", file.to_str().unwrap(), "--vault", dir.path().to_str().unwrap(), "--format", "json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"tracked\":true"))
+        .stdout(predicate::str::contains("\"maturity\":\"budding\""));
+}
+
+#[test]
+fn show_no_frontmatter() {
+    let (dir, file) = setup_vault("no_frontmatter.md");
+    sprout()
+        .args(["show", file.to_str().unwrap(), "--vault", dir.path().to_str().unwrap(), "--format", "json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"tracked\":false"));
+}
+
 // ── error output ───────────────────────────────────────────────────
 
 #[test]

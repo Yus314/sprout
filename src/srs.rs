@@ -237,6 +237,139 @@ mod tests {
     }
 
     #[test]
+    fn test_good_with_delay() {
+        let output = calculate(&SrsInput {
+            interval: 10,
+            ease: 2.5,
+            next_review: date(2026, 2, 20),
+            today: date(2026, 2, 26),
+            rating: Rating::Good,
+            link_count: 0,
+            link_weight: 0.1,
+            max_interval: 90,
+        });
+        // delayed=6, (10 + 6/2) * 2.5 * 0.8 = (10 + 3) * 2.0 = 26.0 → 26
+        assert_eq!(output.new_interval, 26);
+        assert_eq!(output.new_ease, 2.5); // Good doesn't change ease
+    }
+
+    #[test]
+    fn test_hard_minimum_interval_is_one() {
+        let output = calculate(&SrsInput {
+            interval: 1,
+            ease: 2.5,
+            next_review: date(2026, 2, 26),
+            today: date(2026, 2, 26),
+            rating: Rating::Hard,
+            link_count: 0,
+            link_weight: 0.1,
+            max_interval: 90,
+        });
+        // (1 + 0/4) * 0.5 = 0.5, max(1.0) → 1
+        assert_eq!(output.new_interval, 1);
+    }
+
+    #[test]
+    fn test_easy_with_links() {
+        let without = calculate(&SrsInput {
+            interval: 10,
+            ease: 2.5,
+            next_review: date(2026, 2, 26),
+            today: date(2026, 2, 26),
+            rating: Rating::Easy,
+            link_count: 0,
+            link_weight: 0.1,
+            max_interval: 365,
+        });
+        let with_links = calculate(&SrsInput {
+            interval: 10,
+            ease: 2.5,
+            next_review: date(2026, 2, 26),
+            today: date(2026, 2, 26),
+            rating: Rating::Easy,
+            link_count: 64,
+            link_weight: 0.1,
+            max_interval: 365,
+        });
+        assert!(with_links.new_interval > without.new_interval);
+        // Both should increase ease by 0.15
+        assert!((without.new_ease - 2.65).abs() < 0.001);
+        assert!((with_links.new_ease - 2.65).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_hard_does_not_use_link_factor() {
+        let without = calculate(&SrsInput {
+            interval: 10,
+            ease: 2.5,
+            next_review: date(2026, 2, 26),
+            today: date(2026, 2, 26),
+            rating: Rating::Hard,
+            link_count: 0,
+            link_weight: 0.1,
+            max_interval: 90,
+        });
+        let with_links = calculate(&SrsInput {
+            interval: 10,
+            ease: 2.5,
+            next_review: date(2026, 2, 26),
+            today: date(2026, 2, 26),
+            rating: Rating::Hard,
+            link_count: 64,
+            link_weight: 0.1,
+            max_interval: 90,
+        });
+        // Hard formula doesn't use effective_ease, so interval should be same
+        assert_eq!(without.new_interval, with_links.new_interval);
+    }
+
+    #[test]
+    fn test_next_review_date_correct() {
+        let output = calculate(&SrsInput {
+            interval: 1,
+            ease: 2.5,
+            next_review: date(2026, 2, 26),
+            today: date(2026, 2, 26),
+            rating: Rating::Good,
+            link_count: 0,
+            link_weight: 0.1,
+            max_interval: 90,
+        });
+        // new_interval=2, today=2/26 → next_review=2/28
+        assert_eq!(output.next_review, date(2026, 2, 28));
+    }
+
+    #[test]
+    fn test_load_balance_large_interval_fuzz() {
+        // interval=100, fuzz = min(5, 3) = 3
+        let result = load_balance(100, date(2026, 2, 26), &[]);
+        let base = date(2026, 6, 6); // 2026-02-26 + 100 days
+        let diff = (result - base).num_days().abs();
+        assert!(diff <= 3, "fuzz should be ±3, got diff={diff}");
+    }
+
+    #[test]
+    fn test_load_balance_medium_interval_fuzz() {
+        // interval=15, fuzz=±1
+        let base = date(2026, 2, 26) + chrono::Duration::days(15);
+        let result = load_balance(15, date(2026, 2, 26), &[]);
+        let diff = (result - base).num_days().abs();
+        assert!(diff <= 1, "fuzz should be ±1, got diff={diff}");
+    }
+
+    #[test]
+    fn test_load_balance_avoids_loaded_date() {
+        // interval=15 (fuzz=±1), base=2026-03-13
+        let base = date(2026, 3, 13);
+        let before = base - chrono::Duration::days(1);
+        let after = base + chrono::Duration::days(1);
+        // Load base heavily
+        let existing = vec![base, base, base];
+        let result = load_balance(15, date(2026, 2, 26), &existing);
+        assert!(result == before || result == after, "should avoid loaded date, got {result}");
+    }
+
+    #[test]
     fn test_load_balance_tiebreak_earliest() {
         let existing: Vec<NaiveDate> = vec![];
         // interval=10, fuzz=±1, all have 0 reviews → pick earliest (base-1)

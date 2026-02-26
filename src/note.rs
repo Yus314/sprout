@@ -117,3 +117,115 @@ pub fn ensure_in_vault(file: &Path, vault: &Path) -> Result<(), SproutError> {
         ))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::TempDir;
+
+    #[test]
+    fn test_read_note_valid() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("test.md");
+        fs::write(&file, "---\nmaturity: seedling\n---\nHello\n").unwrap();
+
+        let parsed = read_note(&file).unwrap();
+        assert_eq!(parsed.sprout.maturity.as_deref(), Some("seedling"));
+        assert!(parsed.body.contains("Hello"));
+    }
+
+    #[test]
+    fn test_read_note_nonexistent() {
+        let result = read_note(Path::new("/nonexistent/path.md"));
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            SproutError::FileNotFound(_) => {}
+            other => panic!("expected FileNotFound, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_write_note_roundtrip() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("test.md");
+        let content = "---\nmaturity: seedling\n---\nBody\n";
+        write_note(&file, content).unwrap();
+
+        let read_back = fs::read_to_string(&file).unwrap();
+        assert_eq!(read_back, content);
+    }
+
+    #[test]
+    fn test_ensure_in_vault_inside() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("note.md");
+        fs::write(&file, "test").unwrap();
+
+        assert!(ensure_in_vault(&file, dir.path()).is_ok());
+    }
+
+    #[test]
+    fn test_ensure_in_vault_outside() {
+        let vault = TempDir::new().unwrap();
+        let outside = TempDir::new().unwrap();
+        let file = outside.path().join("note.md");
+        fs::write(&file, "test").unwrap();
+
+        let result = ensure_in_vault(&file, vault.path());
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            SproutError::OutsideVault(_) => {}
+            other => panic!("expected OutsideVault, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_scan_vault_finds_md_files() {
+        let dir = TempDir::new().unwrap();
+        fs::write(
+            dir.path().join("tracked.md"),
+            "---\nmaturity: seedling\n---\nBody\n",
+        )
+        .unwrap();
+        fs::write(dir.path().join("plain.md"), "No frontmatter\n").unwrap();
+        fs::write(dir.path().join("not_md.txt"), "ignored").unwrap();
+
+        let notes = scan_vault(dir.path(), &[]).unwrap();
+        assert_eq!(notes.len(), 2); // only .md files
+        let paths: Vec<_> = notes.iter().map(|n| n.relative_path.as_str()).collect();
+        assert!(paths.contains(&"tracked.md"));
+        assert!(paths.contains(&"plain.md"));
+    }
+
+    #[test]
+    fn test_scan_vault_excludes_dirs() {
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join("root.md"), "---\nmaturity: seedling\n---\n").unwrap();
+        let subdir = dir.path().join(".obsidian");
+        fs::create_dir(&subdir).unwrap();
+        fs::write(subdir.join("hidden.md"), "---\nmaturity: seedling\n---\n").unwrap();
+
+        let notes = scan_vault(dir.path(), &[".obsidian".into()]).unwrap();
+        assert_eq!(notes.len(), 1);
+        assert_eq!(notes[0].relative_path, "root.md");
+    }
+
+    #[test]
+    fn test_scan_vault_subdirectory() {
+        let dir = TempDir::new().unwrap();
+        let subdir = dir.path().join("subdir");
+        fs::create_dir(&subdir).unwrap();
+        fs::write(subdir.join("deep.md"), "---\nmaturity: budding\n---\n").unwrap();
+
+        let notes = scan_vault(dir.path(), &[]).unwrap();
+        assert_eq!(notes.len(), 1);
+        assert!(notes[0].relative_path.contains("deep.md"));
+    }
+
+    #[test]
+    fn test_scan_vault_nonexistent() {
+        let result = scan_vault(Path::new("/nonexistent/vault"), &[]);
+        assert!(result.is_err());
+    }
+}

@@ -48,3 +48,57 @@ pub fn format_error(error: &SproutError, format: &OutputFormat) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_error_codes() {
+        assert_eq!(
+            SproutError::FileNotFound("x".into()).error_code(),
+            "file_not_found"
+        );
+        assert_eq!(
+            SproutError::OutsideVault("x".into()).error_code(),
+            "outside_vault"
+        );
+        assert_eq!(
+            SproutError::NoFrontmatter("x".into()).error_code(),
+            "no_frontmatter"
+        );
+        assert_eq!(
+            SproutError::VaultNotFound("x".into()).error_code(),
+            "vault_not_found"
+        );
+        assert_eq!(
+            SproutError::AlreadyInitialized("x".into()).error_code(),
+            "already_initialized"
+        );
+        assert_eq!(
+            SproutError::ParseError("x".into()).error_code(),
+            "parse_error"
+        );
+    }
+
+    #[test]
+    fn test_error_display() {
+        let e = SproutError::FileNotFound("/foo.md".into());
+        assert_eq!(e.to_string(), "/foo.md: file not found");
+
+        let e = SproutError::OutsideVault("/outside.md".into());
+        assert_eq!(e.to_string(), "/outside.md: file is outside vault");
+
+        let e = SproutError::NoFrontmatter("note.md".into());
+        assert_eq!(
+            e.to_string(),
+            "note.md: missing required sprout frontmatter fields"
+        );
+
+        let e = SproutError::AlreadyInitialized("note.md".into());
+        assert_eq!(
+            e.to_string(),
+            "note.md: already initialized with all sprout fields"
+        );
+    }
+}

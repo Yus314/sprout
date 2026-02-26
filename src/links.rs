@@ -94,6 +94,66 @@ mod tests {
     }
 
     #[test]
+    fn test_no_links() {
+        assert_eq!(count_links("No links here at all."), 0);
+    }
+
+    #[test]
+    fn test_empty_body() {
+        assert_eq!(count_links(""), 0);
+    }
+
+    #[test]
+    fn test_multiline_links() {
+        let body = "First [[note1]]\nSecond [[note2]]\nThird [link](path.md)\n";
+        assert_eq!(count_links(body), 3);
+    }
+
+    #[test]
+    fn test_wiki_link_with_heading() {
+        let body = "See [[note#heading]].";
+        assert_eq!(count_links(body), 1);
+    }
+
+    #[test]
+    fn test_mixed_deduplication() {
+        // Same target via wiki-link and markdown link should count as separate
+        // (wiki target = "note", md target = "note.md")
+        let body = "[[note]] and [link](note.md)";
+        assert_eq!(count_links(body), 2);
+    }
+
+    #[test]
+    fn test_http_wiki_link_excluded() {
+        let body = "[[http://example.com]]";
+        assert_eq!(count_links(body), 0);
+    }
+
+    #[test]
+    fn test_image_at_start_of_line() {
+        let body = "![alt](image.png)";
+        assert_eq!(count_links(body), 0);
+    }
+
+    #[test]
+    fn test_link_factor_one_link() {
+        let f = link_factor(1);
+        assert!(f > 0.0 && f < 0.5, "1 link factor should be small, got {f}");
+    }
+
+    #[test]
+    fn test_link_factor_monotonic() {
+        // link_factor should be monotonically increasing
+        let f1 = link_factor(1);
+        let f5 = link_factor(5);
+        let f10 = link_factor(10);
+        let f50 = link_factor(50);
+        assert!(f1 < f5);
+        assert!(f5 < f10);
+        assert!(f10 < f50);
+    }
+
+    #[test]
     fn test_link_factor_clamped_to_one() {
         let f = link_factor(1000);
         assert!(f <= 1.0);

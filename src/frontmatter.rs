@@ -13,6 +13,7 @@ pub struct SproutFrontmatter {
     pub ease: Option<f64>,
 }
 
+#[derive(Debug)]
 pub struct ParsedNote {
     /// Raw YAML string from gray_matter (for string-based write-back)
     pub frontmatter_raw: Option<String>,
@@ -178,6 +179,95 @@ mod tests {
             body,
         );
         assert_eq!(result, "---\nmaturity: seedling\nease: 2.50\n---\nHello world\n");
+    }
+
+    #[test]
+    fn test_parse_note_empty_frontmatter() {
+        let content = "---\n---\nBody only\n";
+        let parsed = parse_note(content);
+        // gray_matter may return empty matter string
+        assert!(parsed.sprout.maturity.is_none());
+        assert!(parsed.body.contains("Body only"));
+    }
+
+    #[test]
+    fn test_parse_note_empty_content() {
+        let parsed = parse_note("");
+        assert!(parsed.frontmatter_raw.is_none());
+        assert!(parsed.sprout.maturity.is_none());
+    }
+
+    #[test]
+    fn test_replace_field_no_match() {
+        let yaml = "maturity: seedling\n";
+        let result = replace_field(yaml, "nonexistent", "value");
+        // No match → unchanged
+        assert_eq!(result, yaml);
+    }
+
+    #[test]
+    fn test_append_field_empty_yaml() {
+        let result = append_field("", "maturity", "seedling");
+        assert_eq!(result, "maturity: seedling\n");
+    }
+
+    #[test]
+    fn test_write_back_empty_yaml() {
+        let body = "Content\n";
+        let result = write_back("", body, &[("maturity", "seedling")]);
+        assert!(result.contains("maturity: seedling"));
+        assert!(result.contains("Content"));
+        assert!(result.starts_with("---\n"));
+    }
+
+    #[test]
+    fn test_write_back_multiple_updates_same_field() {
+        let yaml = "ease: 2.50\n";
+        let body = "Body\n";
+        // Last update wins
+        let result = write_back(yaml, body, &[("ease", "2.65"), ("ease", "2.80")]);
+        assert!(result.contains("ease: 2.80"));
+        assert!(!result.contains("ease: 2.65"));
+    }
+
+    #[test]
+    fn test_build_new_frontmatter_all_fields() {
+        let body = "Note body\n";
+        let fields = vec![
+            ("maturity", "seedling"),
+            ("created", "2026-02-26"),
+            ("last_review", "2026-02-26"),
+            ("review_interval", "1"),
+            ("next_review", "2026-02-27"),
+            ("ease", "2.50"),
+        ];
+        let result = build_new_frontmatter(&fields, body);
+        assert!(result.starts_with("---\n"));
+        assert!(result.ends_with("---\nNote body\n"));
+        for &(key, value) in &fields {
+            assert!(result.contains(&format!("{key}: {value}")));
+        }
+    }
+
+    #[test]
+    fn test_parse_note_with_all_dates() {
+        let content = "---\nmaturity: seedling\ncreated: 2026-01-01\nlast_review: 2026-02-01\nnext_review: 2026-02-15\nreview_interval: 14\nease: 2.65\n---\nBody\n";
+        let parsed = parse_note(content);
+        assert_eq!(parsed.sprout.maturity.as_deref(), Some("seedling"));
+        assert_eq!(
+            parsed.sprout.created,
+            Some(NaiveDate::from_ymd_opt(2026, 1, 1).unwrap())
+        );
+        assert_eq!(
+            parsed.sprout.last_review,
+            Some(NaiveDate::from_ymd_opt(2026, 2, 1).unwrap())
+        );
+        assert_eq!(
+            parsed.sprout.next_review,
+            Some(NaiveDate::from_ymd_opt(2026, 2, 15).unwrap())
+        );
+        assert_eq!(parsed.sprout.review_interval, Some(14));
+        assert!((parsed.sprout.ease.unwrap() - 2.65).abs() < 0.001);
     }
 
     #[test]
