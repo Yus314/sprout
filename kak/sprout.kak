@@ -3,6 +3,7 @@
 
 # ─── User mode ───────────────────────────────────────────────────────
 
+declare-option str sprout_vault
 declare-user-mode sprout
 
 map global user s ':enter-user-mode sprout<ret>' -docstring 'sprout mode'
@@ -11,8 +12,18 @@ map global user s ':enter-user-mode sprout<ret>' -docstring 'sprout mode'
 
 define-command sprout-review -docstring 'List notes due for review' %{
     evaluate-commands %sh{
+        # Resolve vault: kak option > SPROUT_VAULT env > dirname of buffile
+        if [ -n "$kak_opt_sprout_vault" ]; then
+            vault="$kak_opt_sprout_vault"
+        elif [ -n "$SPROUT_VAULT" ]; then
+            vault="$SPROUT_VAULT"
+        elif [ -n "$kak_buffile" ] && [ -f "$kak_buffile" ]; then
+            vault=$(dirname "$kak_buffile")
+        else
+            vault="$PWD"
+        fi
         err=$(mktemp)
-        output=$(sprout review --format json 2>"$err")
+        output=$(sprout review --vault "$vault" --format json 2>"$err")
         rc=$?
         if [ $rc -ne 0 ]; then
             msg=$(jq -r '.message // "unknown error"' < "$err")
@@ -117,8 +128,18 @@ define-command sprout-init -docstring 'Initialize sprout frontmatter for current
 
 define-command sprout-stats -docstring 'Show vault statistics in info box' %{
     evaluate-commands %sh{
+        # Resolve vault: kak option > SPROUT_VAULT env > dirname of buffile
+        if [ -n "$kak_opt_sprout_vault" ]; then
+            vault="$kak_opt_sprout_vault"
+        elif [ -n "$SPROUT_VAULT" ]; then
+            vault="$SPROUT_VAULT"
+        elif [ -n "$kak_buffile" ] && [ -f "$kak_buffile" ]; then
+            vault=$(dirname "$kak_buffile")
+        else
+            vault="$PWD"
+        fi
         err=$(mktemp)
-        output=$(sprout stats --format json 2>"$err")
+        output=$(sprout stats --vault "$vault" --format json 2>"$err")
         rc=$?
         if [ $rc -ne 0 ]; then
             msg=$(jq -r '.message // "unknown error"' < "$err")
@@ -140,8 +161,18 @@ define-command sprout-stats -docstring 'Show vault statistics in info box' %{
 
 define-command sprout-list -docstring 'List all tracked notes' %{
     evaluate-commands %sh{
+        # Resolve vault: kak option > SPROUT_VAULT env > dirname of buffile
+        if [ -n "$kak_opt_sprout_vault" ]; then
+            vault="$kak_opt_sprout_vault"
+        elif [ -n "$SPROUT_VAULT" ]; then
+            vault="$SPROUT_VAULT"
+        elif [ -n "$kak_buffile" ] && [ -f "$kak_buffile" ]; then
+            vault=$(dirname "$kak_buffile")
+        else
+            vault="$PWD"
+        fi
         err=$(mktemp)
-        output=$(sprout list --format json 2>"$err")
+        output=$(sprout list --vault "$vault" --format json 2>"$err")
         rc=$?
         if [ $rc -ne 0 ]; then
             msg=$(jq -r '.message // "unknown error"' < "$err")
