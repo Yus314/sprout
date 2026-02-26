@@ -11,7 +11,7 @@ mod srs;
 use clap::Parser;
 
 use cli::{Cli, Commands};
-use config::{load_config, resolve_vault};
+use config::{load_config, resolve_vault, resolve_vault_with_file};
 use error::{format_error, SproutError};
 
 fn main() {
@@ -74,11 +74,11 @@ fn run_command(cli: &Cli, config: &config::Config) -> Result<(), SproutError> {
 /// For commands that take a file argument, derive the vault from the file's parent
 /// if no explicit vault is given.
 fn resolve_vault_for_file(
-    _file: &std::path::Path,
+    file: &std::path::Path,
     cli: &Cli,
     config: &config::Config,
 ) -> Result<std::path::PathBuf, SproutError> {
-    resolve_vault(cli.vault.as_ref(), config)
+    resolve_vault_with_file(cli.vault.as_ref(), config, Some(file))
         .map_err(|e: anyhow::Error| SproutError::VaultNotFound(e.to_string()))
 }
 

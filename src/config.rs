@@ -60,6 +60,14 @@ pub fn resolve_vault(
     cli_vault: Option<&PathBuf>,
     config: &Config,
 ) -> Result<PathBuf> {
+    resolve_vault_with_file(cli_vault, config, None)
+}
+
+pub fn resolve_vault_with_file(
+    cli_vault: Option<&PathBuf>,
+    config: &Config,
+    file: Option<&std::path::Path>,
+) -> Result<PathBuf> {
     // 1. CLI flag
     if let Some(vault) = cli_vault {
         return Ok(std::fs::canonicalize(vault)?);
@@ -76,7 +84,15 @@ pub fn resolve_vault(
         return Ok(std::fs::canonicalize(vault_path)?);
     }
 
-    // 4. Current working directory
+    // 4. File's parent directory (for file-based commands)
+    if let Some(f) = file {
+        let canonical = std::fs::canonicalize(f)?;
+        if let Some(parent) = canonical.parent() {
+            return Ok(parent.to_path_buf());
+        }
+    }
+
+    // 5. Current working directory
     Ok(std::fs::canonicalize(std::env::current_dir()?)?)
 }
 
@@ -167,5 +183,33 @@ exclude_dirs = [".git", "archive"]
         // No CLI flag, no env, no config → cwd
         let vault = resolve_vault(None, &config).unwrap();
         assert_eq!(vault, std::fs::canonicalize(std::env::current_dir().unwrap()).unwrap());
+    }
+
+    #[test]
+    fn test_resolve_vault_with_file_uses_parent() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let file = dir.path().join("note.md");
+        std::fs::write(&file, "test").unwrap();
+        let config = Config::default();
+        // No CLI flag, no env, no config → file's parent directory
+        let vault = resolve_vault_with_file(None, &config, Some(&file)).unwrap();
+        assert_eq!(vault, std::fs::canonicalize(dir.path()).unwrap());
+    }
+
+    #[test]
+    fn test_resolve_vault_with_file_cli_takes_precedence() {
+        let vault_dir = tempfile::TempDir::new().unwrap();
+        let other_dir = tempfile::TempDir::new().unwrap();
+        let file = other_dir.path().join("note.md");
+        std::fs::write(&file, "test").unwrap();
+        let config = Config::default();
+        // CLI flag should take precedence over file's parent
+        let vault = resolve_vault_with_file(
+            Some(&vault_dir.path().to_path_buf()),
+            &config,
+            Some(&file),
+        )
+        .unwrap();
+        assert_eq!(vault, std::fs::canonicalize(vault_dir.path()).unwrap());
     }
 }
