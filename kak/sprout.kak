@@ -64,15 +64,18 @@ define-command _sprout-fzf-select -hidden -params 1 \
 
         # Generate preview script (frontmatter skip + bat highlight)
         preview_script=$(mktemp "${TMPDIR:-/tmp}/sprout-fzf-preview-XXXXXX.sh")
-        cat > "$preview_script" << 'PREVIEW_OUTER'
+        if command -v bat >/dev/null 2>&1; then
+            cat > "$preview_script" << 'PREVIEW_OUTER'
 #!/bin/sh
-awk 'NR==1&&/^---/{f=1;next} f&&/^---/{f=0;next} f{next} {if(++n>50)exit;print}' "$1" | \
-    if command -v bat >/dev/null 2>&1; then
-        bat -l md --style=plain --color=always --paging=never
-    else
-        cat
-    fi
+end=$(awk 'NR==1 && !/^---/ { print 1; exit } /^---/ && NR>1 { print NR+1; exit } NR>200 { print 1; exit }' "$1")
+bat --line-range="${end:-1}:+49" --style=plain --color=always --paging=never -- "$1"
 PREVIEW_OUTER
+        else
+            cat > "$preview_script" << 'PREVIEW_OUTER'
+#!/bin/sh
+awk 'NR==1&&/^---/{f=1;next} f&&/^---/{f=0;next} f{next} {if(++n>50)exit;print}' "$1"
+PREVIEW_OUTER
+        fi
         chmod +x "$preview_script"
 
         # Generate temporary script
@@ -271,15 +274,18 @@ define-command sprout-note -docstring 'Open or create a note via fzf' %{
 
         # Preview script (frontmatter skip + bat highlight)
         preview_script=$(mktemp "${TMPDIR:-/tmp}/sprout-note-preview-XXXXXX.sh")
-        cat > "$preview_script" << 'PREVIEW_OUTER'
+        if command -v bat >/dev/null 2>&1; then
+            cat > "$preview_script" << 'PREVIEW_OUTER'
 #!/bin/sh
-awk 'NR==1&&/^---/{f=1;next} f&&/^---/{f=0;next} f{next} {if(++n>50)exit;print}' "$1" | \
-    if command -v bat >/dev/null 2>&1; then
-        bat -l md --style=plain --color=always --paging=never
-    else
-        cat
-    fi
+end=$(awk 'NR==1 && !/^---/ { print 1; exit } /^---/ && NR>1 { print NR+1; exit } NR>200 { print 1; exit }' "$1")
+bat --line-range="${end:-1}:+49" --style=plain --color=always --paging=never -- "$1"
 PREVIEW_OUTER
+        else
+            cat > "$preview_script" << 'PREVIEW_OUTER'
+#!/bin/sh
+awk 'NR==1&&/^---/{f=1;next} f&&/^---/{f=0;next} f{next} {if(++n>50)exit;print}' "$1"
+PREVIEW_OUTER
+        fi
         chmod +x "$preview_script"
 
         # Main fzf script: --print-query to capture typed query when nothing is selected
