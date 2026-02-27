@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
 use anyhow::Result;
+use rayon::prelude::*;
 use walkdir::WalkDir;
 
 use crate::cache::FrontmatterCache;
@@ -137,7 +138,10 @@ fn scan_vault(vault: &Path, exclude_dirs: &[String]) -> Result<Vec<NoteInfo>> {
 pub fn scan_vault_metadata(vault: &Path, exclude_dirs: &[String]) -> Result<Vec<NoteMetaInfo>> {
     let entries = collect_md_paths(vault, exclude_dirs)?;
     let mut cache = FrontmatterCache::load();
-    let mut results = Vec::new();
+
+    // Phase 1: sequential stat + cache check
+    let mut hits: Vec<NoteMetaInfo> = Vec::new();
+    let mut misses: Vec<MdEntry> = Vec::new();
 
     for entry in entries {
         let meta = match std::fs::metadata(&entry.canonical) {
@@ -158,61 +162,65 @@ pub fn scan_vault_metadata(vault: &Path, exclude_dirs: &[String]) -> Result<Vec<
         };
         let size = meta.len();
 
-        let sprout = match mtime {
-            Some(d) => {
-                let secs = d.as_secs() as i64;
-                let nanos = d.subsec_nanos();
-                if let Some(cached) = cache.get(&entry.canonical, secs, nanos, size) {
-                    cached.clone()
-                } else {
-                    let content = match std::fs::read_to_string(&entry.canonical) {
-                        Ok(c) => c,
-                        Err(e) => {
-                            eprintln!(
-                                "warning: skipping {}: {}",
-                                entry.canonical.display(),
-                                e
-                            );
-                            continue;
-                        }
-                    };
-                    let parsed = parse_note(&content);
-                    // Re-stat after read for TOCTOU safety
-                    let (final_secs, final_nanos) = std::fs::metadata(&entry.canonical)
-                        .ok()
-                        .and_then(|m| m.modified().ok())
-                        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-                        .map(|d| (d.as_secs() as i64, d.subsec_nanos()))
-                        .unwrap_or((secs, nanos));
-                    cache.insert(
-                        entry.canonical.clone(),
-                        final_secs,
-                        final_nanos,
-                        size,
-                        parsed.sprout.clone(),
-                    );
-                    parsed.sprout
-                }
+        if let Some(d) = mtime {
+            let secs = d.as_secs() as i64;
+            let nanos = d.subsec_nanos();
+            if let Some(cached) = cache.get(&entry.canonical, secs, nanos, size) {
+                hits.push(NoteMetaInfo {
+                    path: entry.canonical,
+                    relative_path: entry.relative,
+                    sprout: cached.clone(),
+                });
+                continue;
             }
-            None => {
-                let content = match std::fs::read_to_string(&entry.canonical) {
-                    Ok(c) => c,
-                    Err(e) => {
-                        eprintln!(
-                            "warning: skipping {}: {}",
-                            entry.canonical.display(),
-                            e
-                        );
-                        continue;
-                    }
-                };
-                parse_note(&content).sprout
-            }
-        };
+        }
+        misses.push(entry);
+    }
 
+    // Phase 2: parallel read for cache misses
+    let reads: Vec<_> = misses
+        .into_par_iter()
+        .filter_map(|entry| {
+            let content = match std::fs::read_to_string(&entry.canonical) {
+                Ok(c) => c,
+                Err(e) => {
+                    eprintln!(
+                        "warning: skipping {}: {}",
+                        entry.canonical.display(),
+                        e
+                    );
+                    return None;
+                }
+            };
+            let parsed = parse_note(&content);
+            // Re-stat after read for TOCTOU safety
+            let post_meta = std::fs::metadata(&entry.canonical).ok();
+            let post_mtime = post_meta
+                .as_ref()
+                .and_then(|m| m.modified().ok())
+                .and_then(|t| t.duration_since(UNIX_EPOCH).ok());
+            let post_size = post_meta.map(|m| m.len()).unwrap_or(0);
+            Some((entry.canonical, entry.relative, parsed.sprout, post_size, post_mtime))
+        })
+        .collect();
+
+    // Phase 3: sequential cache update + result merge
+    let mut results = Vec::with_capacity(hits.len() + reads.len());
+    results.append(&mut hits);
+
+    for (canonical, relative, sprout, size, mtime) in reads {
+        if let Some(d) = mtime {
+            cache.insert(
+                canonical.clone(),
+                d.as_secs() as i64,
+                d.subsec_nanos(),
+                size,
+                sprout.clone(),
+            );
+        }
         results.push(NoteMetaInfo {
-            path: entry.canonical,
-            relative_path: entry.relative,
+            path: canonical,
+            relative_path: relative,
             sprout,
         });
     }
