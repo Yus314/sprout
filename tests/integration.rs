@@ -411,6 +411,153 @@ fn show_no_frontmatter() {
         .stdout(predicate::str::contains("\"tracked\":false"));
 }
 
+// ── note list ─────────────────────────────────────────────────────
+
+#[test]
+fn note_list_shows_all_md_files() {
+    let dir = setup_vault_multi(&["tracked.md", "untracked.md", "no_frontmatter.md"]);
+    let output = sprout()
+        .args(["note", "--vault", dir.path().to_str().unwrap(), "--format", "json"])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    // Should include ALL .md files, not just tracked ones
+    assert!(stdout.contains("tracked.md"));
+    assert!(stdout.contains("untracked.md"));
+    assert!(stdout.contains("no_frontmatter.md"));
+}
+
+#[test]
+fn note_list_empty_vault() {
+    let dir = TempDir::new().unwrap();
+    sprout()
+        .args(["note", "--vault", dir.path().to_str().unwrap(), "--format", "json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("[]"));
+}
+
+#[test]
+fn note_list_excludes_dirs() {
+    let dir = TempDir::new().unwrap();
+    fs::write(dir.path().join("root.md"), "# Root\n").unwrap();
+    let hidden = dir.path().join(".obsidian");
+    fs::create_dir(&hidden).unwrap();
+    fs::write(hidden.join("hidden.md"), "# Hidden\n").unwrap();
+
+    let output = sprout()
+        .args(["note", "--vault", dir.path().to_str().unwrap(), "--format", "json"])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains("root.md"));
+    assert!(!stdout.contains("hidden.md"));
+}
+
+// ── note create ───────────────────────────────────────────────────
+
+#[test]
+fn note_create_new_file() {
+    let dir = TempDir::new().unwrap();
+    sprout()
+        .args(["note", "test note", "--vault", dir.path().to_str().unwrap(), "--format", "json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"is_new\":true"))
+        .stdout(predicate::str::contains("\"relative_path\":\"test note.md\""));
+
+    assert!(dir.path().join("test note.md").exists());
+}
+
+#[test]
+fn note_create_with_auto_init() {
+    let dir = TempDir::new().unwrap();
+    sprout()
+        .args(["note", "init-test", "--vault", dir.path().to_str().unwrap(), "--format", "json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"initialized\":true"))
+        .stdout(predicate::str::contains("\"is_new\":true"));
+
+    let content = fs::read_to_string(dir.path().join("init-test.md")).unwrap();
+    assert!(content.contains("maturity: seedling"));
+    assert!(content.contains("ease: 2.50"));
+}
+
+#[test]
+fn note_create_already_exists_idempotent() {
+    let dir = TempDir::new().unwrap();
+    let file = dir.path().join("existing.md");
+    fs::write(&file, "# Existing note\n").unwrap();
+
+    sprout()
+        .args(["note", "existing", "--vault", dir.path().to_str().unwrap(), "--format", "json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"is_new\":false"))
+        .stdout(predicate::str::contains("\"initialized\":false"));
+
+    // Content should be unchanged
+    let content = fs::read_to_string(&file).unwrap();
+    assert_eq!(content, "# Existing note\n");
+}
+
+#[test]
+fn note_create_human_format() {
+    let dir = TempDir::new().unwrap();
+    sprout()
+        .args(["note", "human-test", "--vault", dir.path().to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Created: human-test.md (initialized)"));
+}
+
+#[test]
+fn note_create_strips_md_suffix() {
+    let dir = TempDir::new().unwrap();
+    sprout()
+        .args(["note", "test.md", "--vault", dir.path().to_str().unwrap(), "--format", "json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"relative_path\":\"test.md\""));
+
+    assert!(dir.path().join("test.md").exists());
+    // Should NOT create test.md.md
+    assert!(!dir.path().join("test.md.md").exists());
+}
+
+// ── note validation ───────────────────────────────────────────────
+
+#[test]
+fn note_create_rejects_path_traversal() {
+    let dir = TempDir::new().unwrap();
+    sprout()
+        .args(["note", "../escape", "--vault", dir.path().to_str().unwrap(), "--format", "json"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("invalid_title"));
+}
+
+#[test]
+fn note_create_rejects_slash() {
+    let dir = TempDir::new().unwrap();
+    sprout()
+        .args(["note", "sub/note", "--vault", dir.path().to_str().unwrap(), "--format", "json"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("invalid_title"));
+}
+
+#[test]
+fn note_create_rejects_empty() {
+    let dir = TempDir::new().unwrap();
+    sprout()
+        .args(["note", "", "--vault", dir.path().to_str().unwrap(), "--format", "json"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("invalid_title"));
+}
+
 // ── error output ───────────────────────────────────────────────────
 
 #[test]

@@ -52,6 +52,14 @@ pub enum Commands {
         /// Path to the note file
         file: PathBuf,
     },
+    /// Open an existing note or create a new one
+    Note {
+        /// Title for a new note (omit to list all notes)
+        title: Option<String>,
+        /// Template name to use
+        #[arg(long)]
+        template: Option<String>,
+    },
 }
 
 #[derive(ValueEnum, Clone, Debug, PartialEq, Eq)]

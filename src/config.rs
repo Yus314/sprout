@@ -10,6 +10,10 @@ pub struct Config {
     pub link_weight: Option<f64>,
     pub load_balance: Option<bool>,
     pub exclude_dirs: Option<Vec<String>>,
+    pub auto_init: Option<bool>,
+    pub template_dir: Option<PathBuf>,
+    pub default_template: Option<String>,
+    pub allow_template_exec: Option<bool>,
 }
 
 impl Config {
@@ -33,6 +37,29 @@ impl Config {
         self.exclude_dirs
             .clone()
             .unwrap_or_else(|| vec![".git".into(), ".obsidian".into(), ".trash".into()])
+    }
+
+    pub fn auto_init(&self) -> bool {
+        self.auto_init.unwrap_or(true)
+    }
+
+    pub fn template_dir(&self) -> PathBuf {
+        self.template_dir
+            .clone()
+            .unwrap_or_else(|| {
+                dirs::config_dir()
+                    .unwrap_or_else(|| PathBuf::from("~/.config"))
+                    .join("sprout")
+                    .join("templates")
+            })
+    }
+
+    pub fn default_template(&self) -> &str {
+        self.default_template.as_deref().unwrap_or("default")
+    }
+
+    pub fn allow_template_exec(&self) -> bool {
+        self.allow_template_exec.unwrap_or(false)
     }
 }
 
@@ -111,6 +138,9 @@ mod tests {
             config.exclude_dirs(),
             vec![".git".to_string(), ".obsidian".to_string(), ".trash".to_string()]
         );
+        assert!(config.auto_init());
+        assert_eq!(config.default_template(), "default");
+        assert!(!config.allow_template_exec());
     }
 
     #[test]
@@ -122,12 +152,20 @@ mod tests {
             link_weight: Some(0.2),
             load_balance: Some(false),
             exclude_dirs: Some(vec!["node_modules".into()]),
+            auto_init: Some(false),
+            template_dir: Some(PathBuf::from("/templates")),
+            default_template: Some("custom".into()),
+            allow_template_exec: Some(true),
         };
         assert_eq!(config.max_interval(), 180);
         assert!((config.default_ease() - 3.0).abs() < f64::EPSILON);
         assert!((config.link_weight() - 0.2).abs() < f64::EPSILON);
         assert!(!config.load_balance());
         assert_eq!(config.exclude_dirs(), vec!["node_modules".to_string()]);
+        assert!(!config.auto_init());
+        assert_eq!(config.template_dir(), PathBuf::from("/templates"));
+        assert_eq!(config.default_template(), "custom");
+        assert!(config.allow_template_exec());
     }
 
     #[test]

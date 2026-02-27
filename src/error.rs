@@ -19,6 +19,9 @@ pub enum SproutError {
 
     #[error("parse error: {0}")]
     ParseError(String),
+
+    #[error("{0}: invalid note title")]
+    InvalidTitle(String),
 }
 
 impl SproutError {
@@ -30,6 +33,7 @@ impl SproutError {
             SproutError::VaultNotFound(_) => "vault_not_found",
             SproutError::AlreadyInitialized(_) => "already_initialized",
             SproutError::ParseError(_) => "parse_error",
+            SproutError::InvalidTitle(_) => "invalid_title",
         }
     }
 }
@@ -78,6 +82,10 @@ mod tests {
         assert_eq!(
             SproutError::ParseError("x".into()).error_code(),
             "parse_error"
+        );
+        assert_eq!(
+            SproutError::InvalidTitle("x".into()).error_code(),
+            "invalid_title"
         );
     }
 

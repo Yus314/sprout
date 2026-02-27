@@ -261,6 +261,72 @@ pub fn format_show_tracked(
     }
 }
 
+// ── note candidates (list all .md) ────────────────────────────────
+
+pub fn format_note_candidates(
+    notes: &[(String, String)],
+    format: &OutputFormat,
+) {
+    match format {
+        OutputFormat::Json => {
+            let arr: Vec<Value> = notes
+                .iter()
+                .map(|(path, rel)| {
+                    json!({
+                        "path": path,
+                        "relative_path": rel,
+                    })
+                })
+                .collect();
+            println!("{}", serde_json::to_string(&arr).unwrap());
+        }
+        OutputFormat::Human => {
+            if notes.is_empty() {
+                println!("No notes found.");
+                return;
+            }
+            for (_, rel) in notes {
+                println!("  {rel}");
+            }
+        }
+    }
+}
+
+// ── note created ──────────────────────────────────────────────────
+
+pub fn format_note_created(
+    path: &str,
+    relative_path: &str,
+    is_new: bool,
+    initialized: bool,
+    format: &OutputFormat,
+) {
+    match format {
+        OutputFormat::Json => {
+            let obj = json!({
+                "path": path,
+                "relative_path": relative_path,
+                "is_new": is_new,
+                "initialized": initialized,
+            });
+            println!("{}", serde_json::to_string(&obj).unwrap());
+        }
+        OutputFormat::Human => {
+            if is_new {
+                if initialized {
+                    println!("Created: {relative_path} (initialized)");
+                } else {
+                    println!("Created: {relative_path}");
+                }
+            } else {
+                println!("Opened: {relative_path}");
+            }
+        }
+    }
+}
+
+// ── show (untracked) ──────────────────────────────────────────────
+
 pub fn format_show_untracked(path: &str, relative_path: &str, format: &OutputFormat) {
     match format {
         OutputFormat::Json => {

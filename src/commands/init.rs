@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use chrono::Local;
+use chrono::{Local, NaiveDate};
 
 use crate::cli::OutputFormat;
 use crate::config::Config;
@@ -18,28 +18,17 @@ const SPROUT_FIELDS: &[&str] = &[
     "ease",
 ];
 
-pub fn run(
-    file: &Path,
-    vault: &Path,
-    config: &Config,
-    format: &OutputFormat,
-) -> Result<(), SproutError> {
-    if !file.exists() {
-        return Err(SproutError::FileNotFound(file.display().to_string()));
-    }
+pub struct InitResult {
+    pub maturity: String,
+    pub review_interval: u32,
+    pub next_review: NaiveDate,
+    pub ease: f64,
+    pub created: NaiveDate,
+    pub fields_added: Option<Vec<String>>,
+}
 
-    note::ensure_in_vault(file, vault)?;
-
-    let file_canonical = std::fs::canonicalize(file)
-        .map_err(|_| SproutError::FileNotFound(file.display().to_string()))?;
-    let vault_canonical = std::fs::canonicalize(vault)
-        .map_err(|_| SproutError::VaultNotFound(vault.display().to_string()))?;
-    let relative_path = file_canonical
-        .strip_prefix(&vault_canonical)
-        .unwrap_or(&file_canonical)
-        .to_string_lossy()
-        .to_string();
-
+/// Core init logic, usable from both `sprout init` and `sprout note` (auto-init).
+pub fn init_note(file: &Path, _vault: &Path, config: &Config) -> Result<InitResult, SproutError> {
     let parsed = note::read_note(file)?;
 
     let today = Local::now().date_naive();
@@ -64,17 +53,14 @@ pub fn run(
             let content = build_new_frontmatter(&fields, &parsed.body);
             note::write_note(file, &content)?;
 
-            output::format_init(
-                &file_canonical.to_string_lossy(),
-                &relative_path,
-                "seedling",
-                1,
-                tomorrow,
-                default_ease,
-                today,
-                None,
-                format,
-            );
+            Ok(InitResult {
+                maturity: "seedling".to_string(),
+                review_interval: 1,
+                next_review: tomorrow,
+                ease: default_ease,
+                created: today,
+                fields_added: None,
+            })
         }
         Some(raw_yaml) => {
             // Check which fields exist
@@ -120,15 +106,24 @@ pub fn run(
             let content = write_back(&yaml, &parsed.body, &[]);
             note::write_note(file, &content)?;
 
-            // Case C: partial — warn about added fields
-            if !all_missing {
+            if all_missing {
+                // Case B: frontmatter exists but no sprout fields
+                Ok(InitResult {
+                    maturity: "seedling".to_string(),
+                    review_interval: 1,
+                    next_review: tomorrow,
+                    ease: default_ease,
+                    created: today,
+                    fields_added: None,
+                })
+            } else {
+                // Case C: partial — warn about added fields
                 let field_names: Vec<String> = missing.iter().map(|s| s.to_string()).collect();
                 eprintln!(
                     "warning: missing fields added with defaults: {}",
                     field_names.join(", ")
                 );
 
-                // Read back final values from defaults + existing
                 let final_maturity = if has_field(raw_yaml, "maturity") {
                     parsed.sprout.maturity.as_deref().unwrap_or("seedling").to_string()
                 } else {
@@ -155,33 +150,54 @@ pub fn run(
                     today
                 };
 
-                output::format_init(
-                    &file_canonical.to_string_lossy(),
-                    &relative_path,
-                    &final_maturity,
-                    final_interval,
-                    final_next_review,
-                    final_ease,
-                    final_created,
-                    Some(&field_names),
-                    format,
-                );
-            } else {
-                // Case B: frontmatter exists but no sprout fields
-                output::format_init(
-                    &file_canonical.to_string_lossy(),
-                    &relative_path,
-                    "seedling",
-                    1,
-                    tomorrow,
-                    default_ease,
-                    today,
-                    None,
-                    format,
-                );
+                Ok(InitResult {
+                    maturity: final_maturity,
+                    review_interval: final_interval,
+                    next_review: final_next_review,
+                    ease: final_ease,
+                    created: final_created,
+                    fields_added: Some(field_names),
+                })
             }
         }
     }
+}
+
+pub fn run(
+    file: &Path,
+    vault: &Path,
+    config: &Config,
+    format: &OutputFormat,
+) -> Result<(), SproutError> {
+    if !file.exists() {
+        return Err(SproutError::FileNotFound(file.display().to_string()));
+    }
+
+    note::ensure_in_vault(file, vault)?;
+
+    let file_canonical = std::fs::canonicalize(file)
+        .map_err(|_| SproutError::FileNotFound(file.display().to_string()))?;
+    let vault_canonical = std::fs::canonicalize(vault)
+        .map_err(|_| SproutError::VaultNotFound(vault.display().to_string()))?;
+    let relative_path = file_canonical
+        .strip_prefix(&vault_canonical)
+        .unwrap_or(&file_canonical)
+        .to_string_lossy()
+        .to_string();
+
+    let result = init_note(file, vault, config)?;
+
+    output::format_init(
+        &file_canonical.to_string_lossy(),
+        &relative_path,
+        &result.maturity,
+        result.review_interval,
+        result.next_review,
+        result.ease,
+        result.created,
+        result.fields_added.as_deref(),
+        format,
+    );
 
     Ok(())
 }

@@ -16,6 +16,7 @@
 | `sprout-stats` | `info` ボックスに統計表示 |
 | `sprout-list` | `menu` で全ノート一覧表示、選択で `edit` |
 | `sprout-show` | 現在のバッファのノート詳細を `info` ボックスに表示 |
+| `sprout-note` | fzf で全ノートから選択、未選択ならクエリからノート新規作成 |
 
 ## キーマッピング
 
@@ -31,6 +32,7 @@
 | `b` | promote budding | buddingに変更 |
 | `v` | promote evergreen | evergreenに変更 |
 | `l` | list | 全ノート一覧 |
+| `n` | note | ノート検索/新規作成 |
 | `?` | show | ノート詳細表示 |
 
 ## 実装 (sprout.kak)
@@ -234,6 +236,7 @@ map global sprout ? ':sprout-show<ret>'                      -docstring 'show no
 | `SproutPromoteBudding` | `sprout-promote budding` 成功後 | 2nd |
 | `SproutPromoteEvergreen` | `sprout-promote evergreen` 成功後 | 2nd |
 | `SproutInit` | `sprout-init` 成功後 | — |
+| `SproutNote` | `sprout-note` で新規ノート作成後 | — |
 
 汎用フック（`SproutDone`, `SproutPromote`）が先に発火し、次に個別フックが発火する。失敗時（`fail`）にはフックは発火しない。
 

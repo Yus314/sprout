@@ -230,6 +230,112 @@ define-command sprout-list -docstring 'List all tracked notes' %{
     _sprout-fzf-select list
 }
 
+define-command sprout-note -docstring 'Open or create a note via fzf' %{
+    evaluate-commands %sh{
+        session="$kak_session"
+        client="$kak_client"
+        fzf_opts="$kak_opt_sprout_fzf_opts"
+
+        # Resolve vault
+        if [ -n "$kak_opt_sprout_vault" ]; then
+            vault="$kak_opt_sprout_vault"
+        elif [ -n "$SPROUT_VAULT" ]; then
+            vault="$SPROUT_VAULT"
+        elif [ -n "$kak_buffile" ] && [ -f "$kak_buffile" ]; then
+            vault=$(dirname "$kak_buffile")
+        else
+            vault="$PWD"
+        fi
+
+        # Run sprout note (list all .md files)
+        err=$(mktemp)
+        output=$(sprout note --vault "$vault" --format json 2>"$err")
+        rc=$?
+        if [ $rc -ne 0 ]; then
+            msg=$(jq -r '.message // "unknown error"' < "$err")
+            rm -f "$err"
+            printf 'fail "sprout note: %s"\n' "$msg"
+            exit
+        fi
+        rm -f "$err"
+
+        # fzf required for this command
+        if ! command -v fzf >/dev/null 2>&1; then
+            printf 'fail "sprout-note requires fzf"\n'
+            exit
+        fi
+
+        # Write fzf input: path<TAB>relative_path per line
+        candidates_file=$(mktemp "${TMPDIR:-/tmp}/sprout-note-cands-XXXXXX")
+        printf '%s' "$output" | jq -r '.[] | .path + "\t" + .relative_path' > "$candidates_file"
+
+        # Preview script (frontmatter skip + bat highlight)
+        preview_script=$(mktemp "${TMPDIR:-/tmp}/sprout-note-preview-XXXXXX.sh")
+        cat > "$preview_script" << 'PREVIEW_OUTER'
+#!/bin/sh
+awk 'NR==1&&/^---/{f=1;next} f&&/^---/{f=0;next} f{next} {if(++n>50)exit;print}' "$1" | \
+    if command -v bat >/dev/null 2>&1; then
+        bat -l md --style=plain --color=always --paging=never
+    else
+        cat
+    fi
+PREVIEW_OUTER
+        chmod +x "$preview_script"
+
+        # Main fzf script: --print-query to capture typed query when nothing is selected
+        script=$(mktemp "${TMPDIR:-/tmp}/sprout-note-XXXXXX.sh")
+        cat > "$script" << OUTER
+#!/bin/sh
+candidates_file="\$1"
+session="\$2"
+client="\$3"
+fzf_opts="\$4"
+script="\$5"
+vault="\$6"
+
+result=\$(fzf \\
+    --delimiter='\\t' --with-nth=2.. \\
+    --print-query \\
+    --preview='$preview_script {1}' \\
+    --preview-window=right:50%:wrap \\
+    \$fzf_opts < "\$candidates_file")
+
+query=\$(printf '%s' "\$result" | sed -n '1p')
+selected=\$(printf '%s' "\$result" | sed -n '2p')
+
+if [ -n "\$selected" ]; then
+    # User selected an existing note
+    file=\$(printf '%s' "\$selected" | cut -f1)
+    printf 'evaluate-commands -client %s edit %%{%s}\\n' "\$client" "\$file" | kak -p "\$session"
+elif [ -n "\$query" ]; then
+    # No selection but query typed → create new note
+    err=\$(mktemp)
+    create_output=\$(sprout note "\$query" --vault "\$vault" --format json 2>"\$err")
+    rc=\$?
+    if [ \$rc -ne 0 ]; then
+        msg=\$(jq -r '.message // "unknown error"' < "\$err")
+        rm -f "\$err"
+        printf 'evaluate-commands -client %s fail "sprout note: %s"\\n' "\$client" "\$msg" | kak -p "\$session"
+    else
+        rm -f "\$err"
+        file=\$(printf '%s' "\$create_output" | jq -r '.path')
+        printf 'evaluate-commands -client %s "edit %%{%s}; trigger-user-hook SproutNote"\\n' "\$client" "\$file" | kak -p "\$session"
+    fi
+fi
+rm -f "\$candidates_file" "\$script" "$preview_script"
+OUTER
+        chmod +x "$script"
+
+        if [ -n "$TMUX" ]; then
+            printf "nop %%sh{ tmux popup -E -w 80%% -h 80%% sh '%s' '%s' '%s' '%s' '%s' '%s' '%s' & }\n" \
+                "$script" "$candidates_file" "$session" "$client" "$fzf_opts" "$script" "$vault"
+        else
+            printf "terminal sh '%s' '%s' '%s' '%s' '%s' '%s' '%s'\n" \
+                "$script" "$candidates_file" "$session" "$client" "$fzf_opts" "$script" "$vault"
+        fi
+    }
+}
+
 define-command sprout-show -docstring 'Show detailed info about current note' %{
     evaluate-commands %sh{
         err=$(mktemp)
@@ -272,4 +378,5 @@ map global sprout p ':sprout-promote seedling<ret>'          -docstring 'promote
 map global sprout b ':sprout-promote budding<ret>'           -docstring 'promote: budding'
 map global sprout v ':sprout-promote evergreen<ret>'         -docstring 'promote: evergreen'
 map global sprout l ':sprout-list<ret>'                      -docstring 'list all notes'
+map global sprout n ':sprout-note<ret>'                      -docstring 'open/create note'
 map global sprout ? ':sprout-show<ret>'                      -docstring 'show note info'

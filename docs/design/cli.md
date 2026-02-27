@@ -11,6 +11,8 @@
 | `sprout init <file>` | フロントマター追加 (seedling, interval=1) |
 | `sprout list [--maturity <m>]` | トラッキング中の全ノートを一覧表示 |
 | `sprout show <file>` | 単一ノートの詳細情報を表示 |
+| `sprout note` | vault内の全.mdファイルを一覧表示 |
+| `sprout note <title>` | 新規ノートを作成（既存なら冪等にパスを返す） |
 
 ## グローバルオプション
 
@@ -75,6 +77,14 @@ pub enum Commands {
     Show {
         /// Path to the note file
         file: PathBuf,
+    },
+    /// Open an existing note or create a new one
+    Note {
+        /// Title for a new note (omit to list all notes)
+        title: Option<String>,
+        /// Template name to use
+        #[arg(long)]
+        template: Option<String>,
     },
 }
 
@@ -280,6 +290,47 @@ JSON 出力の `relative_path` は vault ルートからの相対パスとする
 
 ファイル自体が存在しない場合は exit 1。
 
+### `sprout note --format json` 出力例（List モード）
+
+vault 内の全 `.md` ファイル（SRS トラッキング有無を問わない）を `relative_path` 昇順で返す。
+
+```json
+[
+  {
+    "path": "/home/kaki/notes/zettelkasten/note1.md",
+    "relative_path": "zettelkasten/note1.md"
+  }
+]
+```
+
+### `sprout note <title> --format json` 出力例（Create モード）
+
+新規作成時:
+
+```json
+{
+  "path": "/home/kaki/notes/テストノート.md",
+  "relative_path": "テストノート.md",
+  "is_new": true,
+  "initialized": true
+}
+```
+
+既存ファイルがある場合（冪等動作）:
+
+```json
+{
+  "path": "/home/kaki/notes/テストノート.md",
+  "relative_path": "テストノート.md",
+  "is_new": false,
+  "initialized": false
+}
+```
+
+**タイトルバリデーション**: `/`, `\`, `\0`, `..` を含むタイトルは `invalid_title` エラー。`.md` サフィックスが既にあれば除去して使用（二重拡張子回避）。
+
+**`--template <name>`**: テンプレート名を指定。`{template_dir}/{name}.md` を読み込む。デフォルト: `default`。
+
 ## エラー出力規約
 
 - **成功**: exit 0, stdout に出力
@@ -297,6 +348,7 @@ JSON 出力の `relative_path` は vault ルートからの相対パスとする
 | `vault_not_found` | vault パスが解決できない |
 | `already_initialized` | 全sproutフィールドが既に存在する（`init` 時） |
 | `parse_error` | フロントマターのパースに失敗 |
+| `invalid_title` | ノートタイトルに不正な文字が含まれている |
 
 ## ソースファイル構成
 
@@ -310,6 +362,7 @@ src/
 ├── links.rs         # [[wiki-link]] パースとリンクカウント
 ├── srs.rs           # SRSアルゴリズム（遅延・リンク・負荷分散）
 ├── output.rs        # human / JSON 出力フォーマット
+├── template.rs      # テンプレート読み込みと変数展開
 └── commands/
     ├── mod.rs
     ├── review.rs    # sprout review
@@ -318,5 +371,6 @@ src/
     ├── stats.rs     # sprout stats
     ├── init.rs      # sprout init <file>
     ├── list.rs      # sprout list [--maturity <m>]
+    ├── note.rs      # sprout note [<title>] [--template <name>]
     └── show.rs      # sprout show <file>
 ```

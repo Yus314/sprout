@@ -7,6 +7,7 @@ mod links;
 mod note;
 mod output;
 mod srs;
+mod template;
 
 use clap::Parser;
 
@@ -66,6 +67,13 @@ fn run_command(cli: &Cli, config: &config::Config) -> Result<(), SproutError> {
         Commands::Stats => {
             let vault = resolve_vault_safe(cli, config)?;
             commands::stats::run(&vault, &config.exclude_dirs(), format)
+        }
+        Commands::Note { title, template } => {
+            let vault = resolve_vault_safe(cli, config)?;
+            match title {
+                Some(t) => commands::note::run_create(t, &vault, config, template.as_deref(), format),
+                None => commands::note::run_list(&vault, config, format),
+            }
         }
     }
 }
