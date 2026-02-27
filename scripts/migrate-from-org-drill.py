@@ -28,7 +28,6 @@ FIELDS_TO_REMOVE = {
     "drill_total_repeats",
     "drill_failure_count",
     "drill_average_quality",
-    "bibliography",
 }
 
 MATURITY_TAG_VALUES = {"seedling", "budding", "evergreen"}
