@@ -65,6 +65,7 @@ define-command _sprout-fzf-select -hidden -params 1 \
         # Generate preview script (frontmatter skip + bat highlight)
         preview_script=$(mktemp "${TMPDIR:-/tmp}/sprout-fzf-preview-XXXXXX.sh")
         if command -v bat >/dev/null 2>&1; then
+            bat --paging=never --style=plain --color=always /dev/null >/dev/null 2>&1 &
             cat > "$preview_script" << 'PREVIEW_OUTER'
 #!/bin/sh
 end=$(awk 'NR==1 && !/^---/ { print 1; exit } /^---/ && NR>1 { print NR+1; exit } NR>200 { print 1; exit }' "$1")
@@ -275,6 +276,7 @@ define-command sprout-note -docstring 'Open or create a note via fzf' %{
         # Preview script (frontmatter skip + bat highlight)
         preview_script=$(mktemp "${TMPDIR:-/tmp}/sprout-note-preview-XXXXXX.sh")
         if command -v bat >/dev/null 2>&1; then
+            bat --paging=never --style=plain --color=always /dev/null >/dev/null 2>&1 &
             cat > "$preview_script" << 'PREVIEW_OUTER'
 #!/bin/sh
 end=$(awk 'NR==1 && !/^---/ { print 1; exit } /^---/ && NR>1 { print NR+1; exit } NR>200 { print 1; exit }' "$1")
