@@ -12,40 +12,39 @@ pub fn run(
     exclude_dirs: &[String],
     format: &OutputFormat,
 ) -> Result<(), SproutError> {
-    let notes = note::scan_vault(vault, exclude_dirs)
+    let notes = note::scan_vault_metadata(vault, exclude_dirs)
         .map_err(|e| SproutError::VaultNotFound(e.to_string()))?;
 
     let today = Local::now().date_naive();
 
     let tracked: Vec<_> = notes
         .iter()
-        .filter(|n| n.parsed.sprout.maturity.is_some())
+        .filter(|n| n.sprout.maturity.is_some())
         .collect();
 
     let total = tracked.len();
     let seedling = tracked
         .iter()
-        .filter(|n| n.parsed.sprout.maturity.as_deref() == Some("seedling"))
+        .filter(|n| n.sprout.maturity.as_deref() == Some("seedling"))
         .count();
     let budding = tracked
         .iter()
-        .filter(|n| n.parsed.sprout.maturity.as_deref() == Some("budding"))
+        .filter(|n| n.sprout.maturity.as_deref() == Some("budding"))
         .count();
     let evergreen = tracked
         .iter()
-        .filter(|n| n.parsed.sprout.maturity.as_deref() == Some("evergreen"))
+        .filter(|n| n.sprout.maturity.as_deref() == Some("evergreen"))
         .count();
 
     let due_today = tracked
         .iter()
-        .filter(|n| n.parsed.sprout.next_review == Some(today))
+        .filter(|n| n.sprout.next_review == Some(today))
         .count();
 
     let overdue = tracked
         .iter()
         .filter(|n| {
-            n.parsed
-                .sprout
+            n.sprout
                 .next_review
                 .map(|nr| nr < today)
                 .unwrap_or(false)

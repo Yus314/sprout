@@ -68,14 +68,28 @@ define-command _sprout-fzf-select -hidden -params 1 \
             bat --paging=never --style=plain --color=always /dev/null >/dev/null 2>&1 &
             cat > "$preview_script" << 'PREVIEW_OUTER'
 #!/bin/sh
-end=$(awk 'NR==1 && !/^---/ { print 1; exit } /^---/ && NR>1 { print NR+1; exit } NR>200 { print 1; exit }' "$1")
-bat --line-range="${end:-1}:+49" --style=plain --color=always --paging=never -- "$1"
+cache_dir="$2"
+if [ -d "$cache_dir" ]; then
+    hash=$(printf '%s' "$1" | cksum | cut -d' ' -f1)
+    cached="$cache_dir/$hash.md"
+    if [ ! -f "$cached" ]; then
+        tmp="$cached.tmp.$$"
+        cp -- "$1" "$tmp" 2>/dev/null && mv -f "$tmp" "$cached" || rm -f "$tmp"
+    fi
+    [ -f "$cached" ] && src="$cached" || src="$1"
+else
+    src="$1"
+fi
+end=$(awk 'NR==1 && !/^---/ { print 1; exit } /^---/ && NR>1 { print NR+1; exit } NR>200 { print 1; exit }' "$src")
+bat --line-range="${end:-1}:+49" --style=plain --color=always --paging=never -- "$src"
 PREVIEW_OUTER
+            preview_cache=$(mktemp -d "${TMPDIR:-/tmp}/sprout-preview-cache-XXXXXX")
         else
             cat > "$preview_script" << 'PREVIEW_OUTER'
 #!/bin/sh
 awk 'NR==1&&/^---/{f=1;next} f&&/^---/{f=0;next} f{next} {if(++n>50)exit;print}' "$1"
 PREVIEW_OUTER
+            preview_cache=""
         fi
         chmod +x "$preview_script"
 
@@ -83,6 +97,7 @@ PREVIEW_OUTER
         script=$(mktemp "${TMPDIR:-/tmp}/sprout-fzf-XXXXXX.sh")
         cat > "$script" << OUTER
 #!/bin/sh
+${preview_cache:+trap 'rm -rf "$preview_cache"' EXIT INT TERM}
 candidates_file="\$1"
 session="\$2"
 client="\$3"
@@ -90,7 +105,7 @@ fzf_opts="\$4"
 script="\$5"
 selected=\$(fzf \\
     --delimiter='\\t' --with-nth=2.. \\
-    --preview='$preview_script {1}' \\
+    --preview='$preview_script {1} $preview_cache' \\
     --preview-window=right:50%:wrap \\
     \$fzf_opts < "\$candidates_file")
 if [ -n "\$selected" ]; then
@@ -279,14 +294,28 @@ define-command sprout-note -docstring 'Open or create a note via fzf' %{
             bat --paging=never --style=plain --color=always /dev/null >/dev/null 2>&1 &
             cat > "$preview_script" << 'PREVIEW_OUTER'
 #!/bin/sh
-end=$(awk 'NR==1 && !/^---/ { print 1; exit } /^---/ && NR>1 { print NR+1; exit } NR>200 { print 1; exit }' "$1")
-bat --line-range="${end:-1}:+49" --style=plain --color=always --paging=never -- "$1"
+cache_dir="$2"
+if [ -d "$cache_dir" ]; then
+    hash=$(printf '%s' "$1" | cksum | cut -d' ' -f1)
+    cached="$cache_dir/$hash.md"
+    if [ ! -f "$cached" ]; then
+        tmp="$cached.tmp.$$"
+        cp -- "$1" "$tmp" 2>/dev/null && mv -f "$tmp" "$cached" || rm -f "$tmp"
+    fi
+    [ -f "$cached" ] && src="$cached" || src="$1"
+else
+    src="$1"
+fi
+end=$(awk 'NR==1 && !/^---/ { print 1; exit } /^---/ && NR>1 { print NR+1; exit } NR>200 { print 1; exit }' "$src")
+bat --line-range="${end:-1}:+49" --style=plain --color=always --paging=never -- "$src"
 PREVIEW_OUTER
+            preview_cache=$(mktemp -d "${TMPDIR:-/tmp}/sprout-preview-cache-XXXXXX")
         else
             cat > "$preview_script" << 'PREVIEW_OUTER'
 #!/bin/sh
 awk 'NR==1&&/^---/{f=1;next} f&&/^---/{f=0;next} f{next} {if(++n>50)exit;print}' "$1"
 PREVIEW_OUTER
+            preview_cache=""
         fi
         chmod +x "$preview_script"
 
@@ -294,6 +323,7 @@ PREVIEW_OUTER
         script=$(mktemp "${TMPDIR:-/tmp}/sprout-note-XXXXXX.sh")
         cat > "$script" << OUTER
 #!/bin/sh
+${preview_cache:+trap 'rm -rf "$preview_cache"' EXIT INT TERM}
 candidates_file="\$1"
 session="\$2"
 client="\$3"
@@ -304,7 +334,7 @@ vault="\$6"
 result=\$(fzf \\
     --delimiter='\\t' --with-nth=2.. \\
     --print-query \\
-    --preview='$preview_script {1}' \\
+    --preview='$preview_script {1} $preview_cache' \\
     --preview-window=right:50%:wrap \\
     \$fzf_opts < "\$candidates_file")
 

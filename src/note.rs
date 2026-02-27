@@ -1,21 +1,31 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use std::time::UNIX_EPOCH;
 
 use anyhow::Result;
 use walkdir::WalkDir;
 
+use crate::cache::FrontmatterCache;
 use crate::error::SproutError;
-use crate::frontmatter::{parse_note, ParsedNote};
+use crate::frontmatter::{parse_note, ParsedNote, SproutFrontmatter};
 
-pub struct NoteInfo {
-    pub path: PathBuf,
-    pub relative_path: String,
-    pub parsed: ParsedNote,
+#[cfg(test)]
+#[allow(dead_code)]
+struct NoteInfo {
+    path: PathBuf,
+    relative_path: String,
+    parsed: ParsedNote,
 }
 
 pub struct NotePath {
     pub path: PathBuf,
     pub relative_path: String,
+}
+
+pub struct NoteMetaInfo {
+    pub path: PathBuf,
+    pub relative_path: String,
+    pub sprout: SproutFrontmatter,
 }
 
 struct MdEntry {
@@ -92,10 +102,8 @@ pub fn scan_vault_paths(vault: &Path, exclude_dirs: &[String]) -> Result<Vec<Not
         .collect())
 }
 
-/// Scan the vault for .md files, excluding specified directories.
-/// Symlinks are followed; cycles are skipped. Duplicate paths (via canonicalize) are deduplicated.
-/// Files that cannot be read are warned to stderr and skipped.
-pub fn scan_vault(vault: &Path, exclude_dirs: &[String]) -> Result<Vec<NoteInfo>> {
+#[cfg(test)]
+fn scan_vault(vault: &Path, exclude_dirs: &[String]) -> Result<Vec<NoteInfo>> {
     let entries = collect_md_paths(vault, exclude_dirs)?;
     let mut notes = Vec::new();
 
@@ -122,6 +130,95 @@ pub fn scan_vault(vault: &Path, exclude_dirs: &[String]) -> Result<Vec<NoteInfo>
     }
 
     Ok(notes)
+}
+
+/// Scan the vault for .md files, returning only frontmatter metadata.
+/// Uses a local cache keyed by mtime+size to avoid reading unchanged files.
+pub fn scan_vault_metadata(vault: &Path, exclude_dirs: &[String]) -> Result<Vec<NoteMetaInfo>> {
+    let entries = collect_md_paths(vault, exclude_dirs)?;
+    let mut cache = FrontmatterCache::load();
+    let mut results = Vec::new();
+
+    for entry in entries {
+        let meta = match std::fs::metadata(&entry.canonical) {
+            Ok(m) => m,
+            Err(e) => {
+                eprintln!(
+                    "warning: skipping {}: {}",
+                    entry.canonical.display(),
+                    e
+                );
+                continue;
+            }
+        };
+
+        let mtime = match meta.modified() {
+            Ok(t) => t.duration_since(UNIX_EPOCH).ok(),
+            Err(_) => None,
+        };
+        let size = meta.len();
+
+        let sprout = match mtime {
+            Some(d) => {
+                let secs = d.as_secs() as i64;
+                let nanos = d.subsec_nanos();
+                if let Some(cached) = cache.get(&entry.canonical, secs, nanos, size) {
+                    cached.clone()
+                } else {
+                    let content = match std::fs::read_to_string(&entry.canonical) {
+                        Ok(c) => c,
+                        Err(e) => {
+                            eprintln!(
+                                "warning: skipping {}: {}",
+                                entry.canonical.display(),
+                                e
+                            );
+                            continue;
+                        }
+                    };
+                    let parsed = parse_note(&content);
+                    // Re-stat after read for TOCTOU safety
+                    let (final_secs, final_nanos) = std::fs::metadata(&entry.canonical)
+                        .ok()
+                        .and_then(|m| m.modified().ok())
+                        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+                        .map(|d| (d.as_secs() as i64, d.subsec_nanos()))
+                        .unwrap_or((secs, nanos));
+                    cache.insert(
+                        entry.canonical.clone(),
+                        final_secs,
+                        final_nanos,
+                        size,
+                        parsed.sprout.clone(),
+                    );
+                    parsed.sprout
+                }
+            }
+            None => {
+                let content = match std::fs::read_to_string(&entry.canonical) {
+                    Ok(c) => c,
+                    Err(e) => {
+                        eprintln!(
+                            "warning: skipping {}: {}",
+                            entry.canonical.display(),
+                            e
+                        );
+                        continue;
+                    }
+                };
+                parse_note(&content).sprout
+            }
+        };
+
+        results.push(NoteMetaInfo {
+            path: entry.canonical,
+            relative_path: entry.relative,
+            sprout,
+        });
+    }
+
+    cache.save();
+    Ok(results)
 }
 
 /// Read and parse a single note file.

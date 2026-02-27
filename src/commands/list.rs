@@ -11,15 +11,15 @@ pub fn run(
     exclude_dirs: &[String],
     format: &OutputFormat,
 ) -> Result<(), SproutError> {
-    let notes = note::scan_vault(vault, exclude_dirs)
+    let notes = note::scan_vault_metadata(vault, exclude_dirs)
         .map_err(|e| SproutError::VaultNotFound(e.to_string()))?;
 
     let mut tracked: Vec<_> = notes
         .into_iter()
-        .filter(|n| n.parsed.sprout.maturity.is_some())
+        .filter(|n| n.sprout.maturity.is_some())
         .filter(|n| {
             if let Some(filter) = maturity_filter {
-                n.parsed.sprout.maturity.as_deref() == Some(&filter.to_string())
+                n.sprout.maturity.as_deref() == Some(&filter.to_string())
             } else {
                 true
             }
@@ -35,10 +35,10 @@ pub fn run(
             (
                 n.path.to_string_lossy().to_string(),
                 n.relative_path.clone(),
-                n.parsed.sprout.maturity.clone(),
-                n.parsed.sprout.review_interval,
-                n.parsed.sprout.next_review,
-                n.parsed.sprout.ease,
+                n.sprout.maturity.clone(),
+                n.sprout.review_interval,
+                n.sprout.next_review,
+                n.sprout.ease,
             )
         })
         .collect();

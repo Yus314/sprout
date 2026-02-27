@@ -3,7 +3,7 @@ use gray_matter::{engine::YAML, Matter};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SproutFrontmatter {
     pub maturity: Option<String>,
     pub created: Option<NaiveDate>,

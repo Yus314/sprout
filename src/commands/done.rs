@@ -69,12 +69,12 @@ pub fn run(
         let vault_canonical = std::fs::canonicalize(vault)
             .map_err(|_| SproutError::VaultNotFound(vault.display().to_string()))?;
         let exclude_dirs = config.exclude_dirs();
-        let all_notes = note::scan_vault(&vault_canonical, &exclude_dirs)
+        let all_notes = note::scan_vault_metadata(&vault_canonical, &exclude_dirs)
             .map_err(|e| SproutError::VaultNotFound(e.to_string()))?;
 
         let existing_dates: Vec<_> = all_notes
             .iter()
-            .filter_map(|n| n.parsed.sprout.next_review)
+            .filter_map(|n| n.sprout.next_review)
             .collect();
 
         srs::load_balance(srs_output.new_interval, today, &existing_dates)

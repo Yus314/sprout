@@ -12,7 +12,7 @@ pub fn run(
     exclude_dirs: &[String],
     format: &OutputFormat,
 ) -> Result<(), SproutError> {
-    let notes = note::scan_vault(vault, exclude_dirs)
+    let notes = note::scan_vault_metadata(vault, exclude_dirs)
         .map_err(|e| SproutError::VaultNotFound(e.to_string()))?;
 
     let today = Local::now().date_naive();
@@ -21,16 +21,16 @@ pub fn run(
         .into_iter()
         .filter(|n| {
             // Must be tracked (maturity exists)
-            if n.parsed.sprout.maturity.is_none() {
+            if n.sprout.maturity.is_none() {
                 return false;
             }
             // Skip if next_review is missing
-            let next_review = match n.parsed.sprout.next_review {
+            let next_review = match n.sprout.next_review {
                 Some(nr) => nr,
                 None => return false,
             };
             // Skip if ease or review_interval is missing
-            if n.parsed.sprout.ease.is_none() || n.parsed.sprout.review_interval.is_none() {
+            if n.sprout.ease.is_none() || n.sprout.review_interval.is_none() {
                 return false;
             }
             // Due: next_review <= today
@@ -39,12 +39,7 @@ pub fn run(
         .collect();
 
     // Sort by next_review ascending (most overdue first)
-    due.sort_by(|a, b| {
-        a.parsed
-            .sprout
-            .next_review
-            .cmp(&b.parsed.sprout.next_review)
-    });
+    due.sort_by(|a, b| a.sprout.next_review.cmp(&b.sprout.next_review));
 
     let entries: Vec<_> = due
         .iter()
@@ -52,10 +47,10 @@ pub fn run(
             (
                 n.path.to_string_lossy().to_string(),
                 n.relative_path.clone(),
-                n.parsed.sprout.maturity.clone(),
-                n.parsed.sprout.review_interval,
-                n.parsed.sprout.next_review,
-                n.parsed.sprout.ease,
+                n.sprout.maturity.clone(),
+                n.sprout.review_interval,
+                n.sprout.next_review,
+                n.sprout.ease,
             )
         })
         .collect();
