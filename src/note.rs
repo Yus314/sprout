@@ -13,15 +13,24 @@ pub struct NoteInfo {
     pub parsed: ParsedNote,
 }
 
-/// Scan the vault for .md files, excluding specified directories.
+pub struct NotePath {
+    pub path: PathBuf,
+    pub relative_path: String,
+}
+
+struct MdEntry {
+    canonical: PathBuf,
+    relative: String,
+}
+
+/// Walk the vault and collect canonical+relative paths for all `.md` files.
 /// Symlinks are followed; cycles are skipped. Duplicate paths (via canonicalize) are deduplicated.
-/// Parse errors on individual files are warned to stderr and skipped.
-pub fn scan_vault(vault: &Path, exclude_dirs: &[String]) -> Result<Vec<NoteInfo>> {
+fn collect_md_paths(vault: &Path, exclude_dirs: &[String]) -> Result<Vec<MdEntry>> {
     let vault_canonical = std::fs::canonicalize(vault)
         .map_err(|_| SproutError::VaultNotFound(vault.display().to_string()))?;
 
     let mut seen = HashSet::new();
-    let mut notes = Vec::new();
+    let mut entries = Vec::new();
 
     let walker = WalkDir::new(&vault_canonical)
         .follow_links(true)
@@ -58,12 +67,45 @@ pub fn scan_vault(vault: &Path, exclude_dirs: &[String]) -> Result<Vec<NoteInfo>
             continue; // duplicate
         }
 
-        let content = match std::fs::read_to_string(&canonical) {
+        let relative = canonical
+            .strip_prefix(&vault_canonical)
+            .unwrap_or(&canonical)
+            .to_string_lossy()
+            .to_string();
+
+        entries.push(MdEntry { canonical, relative });
+    }
+
+    Ok(entries)
+}
+
+/// Scan the vault for `.md` file paths only (no file content is read).
+/// Symlinks are followed; cycles are skipped. Duplicate paths (via canonicalize) are deduplicated.
+pub fn scan_vault_paths(vault: &Path, exclude_dirs: &[String]) -> Result<Vec<NotePath>> {
+    let entries = collect_md_paths(vault, exclude_dirs)?;
+    Ok(entries
+        .into_iter()
+        .map(|e| NotePath {
+            path: e.canonical,
+            relative_path: e.relative,
+        })
+        .collect())
+}
+
+/// Scan the vault for .md files, excluding specified directories.
+/// Symlinks are followed; cycles are skipped. Duplicate paths (via canonicalize) are deduplicated.
+/// Files that cannot be read are warned to stderr and skipped.
+pub fn scan_vault(vault: &Path, exclude_dirs: &[String]) -> Result<Vec<NoteInfo>> {
+    let entries = collect_md_paths(vault, exclude_dirs)?;
+    let mut notes = Vec::new();
+
+    for entry in entries {
+        let content = match std::fs::read_to_string(&entry.canonical) {
             Ok(c) => c,
             Err(e) => {
                 eprintln!(
                     "warning: skipping {}: {}",
-                    canonical.display(),
+                    entry.canonical.display(),
                     e
                 );
                 continue;
@@ -72,15 +114,9 @@ pub fn scan_vault(vault: &Path, exclude_dirs: &[String]) -> Result<Vec<NoteInfo>
 
         let parsed = parse_note(&content);
 
-        let relative_path = canonical
-            .strip_prefix(&vault_canonical)
-            .unwrap_or(&canonical)
-            .to_string_lossy()
-            .to_string();
-
         notes.push(NoteInfo {
-            path: canonical,
-            relative_path,
+            path: entry.canonical,
+            relative_path: entry.relative,
             parsed,
         });
     }
@@ -227,5 +263,32 @@ mod tests {
     fn test_scan_vault_nonexistent() {
         let result = scan_vault(Path::new("/nonexistent/vault"), &[]);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_scan_vault_paths_finds_md_files() {
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join("a.md"), "content").unwrap();
+        fs::write(dir.path().join("b.md"), "content").unwrap();
+        fs::write(dir.path().join("c.txt"), "content").unwrap();
+
+        let paths = scan_vault_paths(dir.path(), &[]).unwrap();
+        assert_eq!(paths.len(), 2);
+        let rel: Vec<_> = paths.iter().map(|p| p.relative_path.as_str()).collect();
+        assert!(rel.contains(&"a.md"));
+        assert!(rel.contains(&"b.md"));
+    }
+
+    #[test]
+    fn test_scan_vault_paths_excludes_dirs() {
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join("root.md"), "content").unwrap();
+        let hidden = dir.path().join(".obsidian");
+        fs::create_dir(&hidden).unwrap();
+        fs::write(hidden.join("hidden.md"), "content").unwrap();
+
+        let paths = scan_vault_paths(dir.path(), &[".obsidian".into()]).unwrap();
+        assert_eq!(paths.len(), 1);
+        assert_eq!(paths[0].relative_path, "root.md");
     }
 }

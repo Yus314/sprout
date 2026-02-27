@@ -12,10 +12,10 @@ pub fn run_list(
     config: &Config,
     format: &OutputFormat,
 ) -> Result<(), SproutError> {
-    let notes = note::scan_vault(vault, &config.exclude_dirs())
+    let paths = note::scan_vault_paths(vault, &config.exclude_dirs())
         .map_err(|e| SproutError::VaultNotFound(e.to_string()))?;
 
-    let mut candidates: Vec<(String, String)> = notes
+    let mut candidates: Vec<(String, String)> = paths
         .into_iter()
         .map(|n| (n.path.to_string_lossy().to_string(), n.relative_path))
         .collect();

@@ -454,6 +454,27 @@ fn note_list_excludes_dirs() {
     assert!(!stdout.contains("hidden.md"));
 }
 
+#[test]
+fn note_list_sorted_by_relative_path() {
+    let dir = TempDir::new().unwrap();
+    // Create files in non-alphabetical order
+    fs::write(dir.path().join("zebra.md"), "# Z\n").unwrap();
+    fs::write(dir.path().join("alpha.md"), "# A\n").unwrap();
+    fs::write(dir.path().join("middle.md"), "# M\n").unwrap();
+
+    let output = sprout()
+        .args(["note", "--vault", dir.path().to_str().unwrap(), "--format", "json"])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8(output.stdout).unwrap();
+
+    let alpha_pos = stdout.find("alpha.md").unwrap();
+    let middle_pos = stdout.find("middle.md").unwrap();
+    let zebra_pos = stdout.find("zebra.md").unwrap();
+    assert!(alpha_pos < middle_pos, "alpha.md should come before middle.md");
+    assert!(middle_pos < zebra_pos, "middle.md should come before zebra.md");
+}
+
 // ── note create ───────────────────────────────────────────────────
 
 #[test]
