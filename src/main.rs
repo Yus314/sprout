@@ -73,7 +73,14 @@ fn run_command(cli: &Cli, config: &config::Config) -> Result<(), SproutError> {
             let vault = resolve_vault_safe(cli, config)?;
             match title {
                 Some(t) => commands::note::run_create(t, &vault, config, template.as_deref(), format),
-                None => commands::note::run_list(&vault, config, format),
+                None => {
+                    use std::io::IsTerminal;
+                    if *format == cli::OutputFormat::Human && std::io::stdout().is_terminal() {
+                        commands::note::run_interactive(&vault, config, template.as_deref(), format)
+                    } else {
+                        commands::note::run_list(&vault, config, format)
+                    }
+                }
             }
         }
     }

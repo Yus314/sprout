@@ -22,6 +22,12 @@ pub enum SproutError {
 
     #[error("{0}: invalid note title")]
     InvalidTitle(String),
+
+    #[error("editor not configured: set $VISUAL or $EDITOR")]
+    EditorNotFound,
+
+    #[error("fzf failed: {0}")]
+    FzfError(String),
 }
 
 impl SproutError {
@@ -34,6 +40,8 @@ impl SproutError {
             SproutError::AlreadyInitialized(_) => "already_initialized",
             SproutError::ParseError(_) => "parse_error",
             SproutError::InvalidTitle(_) => "invalid_title",
+            SproutError::EditorNotFound => "editor_not_found",
+            SproutError::FzfError(_) => "fzf_error",
         }
     }
 }
@@ -86,6 +94,11 @@ mod tests {
         assert_eq!(
             SproutError::InvalidTitle("x".into()).error_code(),
             "invalid_title"
+        );
+        assert_eq!(SproutError::EditorNotFound.error_code(), "editor_not_found");
+        assert_eq!(
+            SproutError::FzfError("x".into()).error_code(),
+            "fzf_error"
         );
     }
 
