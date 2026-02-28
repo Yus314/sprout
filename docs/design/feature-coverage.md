@@ -26,7 +26,7 @@
 | フラッシュカード | ✅ | ❌ | sproutはノート単位 |
 | ノートレビュー | ✅ | ✅ | |
 | リンク先ノートのease参照 | ✅ | ✅ (簡易版) | リンク数のみ使用 |
-| フォルダ無視設定 | ✅ | 🔮 | v0.2検討 |
+| フォルダ無視設定 | ✅ | ✅ (簡易版) | `exclude_dirs` 設定で対応済み |
 | モバイル対応 | ✅ (Obsidian経由) | ❌ | CLIのみ |
 | Obsidianプラグイン | ✅ | N/A | Kakoune + CLI |
 | YAML frontmatter | ✅ | ✅ | 互換フォーマット |
@@ -64,7 +64,7 @@ org-roam-reviewのフック（`node-accepted-hook`等5種）はEmacs Lispの`run
 
 1. フロントマターのパース・ラウンドトリップ
 2. SRS基本計算（ease, interval, delay）
-3. 全7コマンド（review, done, promote, stats, init, list, show）
+3. 全8コマンド（review, done, promote, stats, init, list, show, note）
 4. JSON出力
 5. Kakouneプラグイン
 6. Nixパッケージング
@@ -72,7 +72,7 @@ org-roam-reviewのフック（`node-accepted-hook`等5種）はEmacs Lispの`run
 ### v0.2 (検討)
 
 - タグフィルタリング (`sprout review --tag`)
-- フォルダ無視設定 (`.sproutignore` or config)
+- 高度なフォルダ無視設定（`.sproutignore` 等。現在は `exclude_dirs` で簡易版を実装済み）
 - バルクレビューモード
 - カスタムmaturityレベル
 - レビュー履歴ログ

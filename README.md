@@ -31,6 +31,7 @@ sprout は、このプロセスを 3 段階の成熟度モデルで支援する:
 | `sprout init <file>` | フロントマターを追加（seedling, interval=1） |
 | `sprout list [--maturity <m>]` | トラッキング中の全ノートを一覧表示 |
 | `sprout show <file>` | 単一ノートの詳細情報を表示 |
+| `sprout note [<title>]` | ノートの一覧表示または新規作成 |
 
 全コマンドで `--vault <path>` と `--format human|json` オプションが使用可能。詳細は [CLI コマンド仕様](docs/design/cli.md) を参照。
 
@@ -58,6 +59,11 @@ max_interval = 90
 default_ease = 2.5
 link_weight = 0.1
 load_balance = true
+exclude_dirs = [".git", ".obsidian", ".trash"]
+# auto_init = true
+# template_dir = "/home/user/.config/sprout/templates"
+# default_template = "default"
+# allow_template_exec = false
 ```
 
 全フィールドはオプション。設定ファイルなしでもカレントディレクトリをデフォルトとして動作する。詳細は [設定ファイル仕様](docs/design/config.md) を参照。

@@ -14,7 +14,7 @@
 # load_balance = true                          # 負荷分散の有効/無効
 # exclude_dirs = [".git", ".obsidian", ".trash"]  # スキャン除外ディレクトリ
 # auto_init = true                                # note作成時に自動でfrontmatter初期化
-# template_dir = "~/.config/sprout/templates"     # テンプレートディレクトリ
+# template_dir = "/home/user/.config/sprout/templates"  # テンプレートディレクトリ
 # default_template = "default"                    # デフォルトテンプレート名
 # allow_template_exec = false                     # テンプレート内シェルコマンド展開の許可
 ```
@@ -30,7 +30,7 @@
 | `load_balance` | bool | `true` | 負荷分散の有効化 |
 | `exclude_dirs` | list | `[".git", ".obsidian", ".trash"]` | vault スキャン時に除外するディレクトリ名 |
 | `auto_init` | bool | `true` | `sprout note` での新規作成時に自動で frontmatter を初期化 |
-| `template_dir` | string | `~/.config/sprout/templates` | テンプレートファイルのディレクトリ |
+| `template_dir` | string | 例: `/home/user/.config/sprout/templates` | テンプレートファイルのディレクトリ（`dirs::config_dir()` で解決。`~` は展開されない） |
 | `default_template` | string | `"default"` | デフォルトで使用するテンプレート名 |
 | `allow_template_exec` | bool | `false` | テンプレート内の `{{$(...)}}` シェルコマンド展開を許可 |
 
@@ -39,7 +39,8 @@
 1. `--vault` CLIフラグ（最優先）
 2. `SPROUT_VAULT` 環境変数
 3. `~/.config/sprout/config.toml` の `vault_path`
-4. カレントワーキングディレクトリ（フォールバック）
+4. ファイルの親ディレクトリ（`init`, `done`, `show`, `promote` 等ファイル指定コマンドのみ）
+5. カレントワーキングディレクトリ（フォールバック）
 
 ## Rust実装
 

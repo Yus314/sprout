@@ -69,6 +69,7 @@ sprout は **CLI（データ変換層）** と **エディタプラグイン（�
 - YAML フロントマターのパース・書き戻し（既存の書式を保持する文字列操作方式）
 - SRS アルゴリズムの計算（ease、interval、next_review）
 - vault 全体のスキャンとフィルタリング
+- テンプレートの読み込みと変数展開（ノート新規作成時）
 - human-readable / JSON 形式での出力
 
 **エディタプラグインの責務:**
@@ -86,7 +87,7 @@ sprout は **CLI（データ変換層）** と **エディタプラグイン（�
 
 1. **[frontmatter.md](frontmatter.md)** — sprout が管理するデータの形式。YAML フロントマターのフィールド定義、パース・書き戻しの方針
 2. **[algorithm.md](algorithm.md)** — SRS アルゴリズムの詳細。ease/interval 計算、リンクファクター、負荷分散
-3. **[cli.md](cli.md)** — 7 つのコマンドの仕様、Clap 構造、JSON 出力形式、ソースファイル構成
+3. **[cli.md](cli.md)** — 8 つのコマンドの仕様、Clap 構造、JSON 出力形式、ソースファイル構成
 
 ### 環境・統合
 

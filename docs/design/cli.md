@@ -101,7 +101,7 @@ pub enum OutputFormat { Human, Json }
 
 ## Vault スキャン
 
-`review`, `list`, `stats`, `done`（負荷分散）の4コマンドは vault 全体をスキャンする。
+`review`, `list`, `stats`, `done`（負荷分散）、`note`（listモード）の5コマンドは vault 全体をスキャンする。`note` listモードは `scan_vault_paths` でパスのみ走査し、メタデータは読まない。
 
 ### スキャン対象
 
@@ -184,7 +184,7 @@ JSON 出力の `relative_path` は vault ルートからの相対パスとする
 `due_today` と `overdue` は排他的:
 - `overdue`: `next_review < today`（過去に予定日を過ぎたノート）
 - `due_today`: `next_review == today`（今日が予定日のノート）
-- `review` コマンドが返すノート数は `due_today + overdue` と一致する
+- `review` コマンドは `ease`/`review_interval` が欠損したノートを除外するため、返すノート数は `due_today + overdue` とは必ずしも一致しない
 
 ### `sprout promote --format json` 出力例
 
@@ -331,12 +331,32 @@ vault 内の全 `.md` ファイル（SRS トラッキング有無を問わない
 
 **`--template <name>`**: テンプレート名を指定。`{template_dir}/{name}.md` を読み込む。デフォルト: `default`。
 
+### テンプレート仕様
+
+テンプレートファイルは `{template_dir}/{name}.md` から読み込む。未存在時は `# {{title}}\n` をフォールバックとして使用。
+
+#### 組み込み変数
+
+| 変数 | 展開結果 |
+|------|---------|
+| `{{title}}` | ノートタイトル |
+| `{{date}}` | 現在日付（YYYY-MM-DD） |
+
+#### シェルコマンド展開
+
+`allow_template_exec = true` の場合のみ、`{{$(...)}}` パターンをシェルコマンドとして実行する。
+
+- 実行環境: `sh -c` 経由。環境変数 `SPROUT_TITLE` にタイトルが設定される
+- タイムアウト: 5秒。超過時はエラー
+- `allow_template_exec = false`（デフォルト）では `{{$(...)}}` はリテラルとして保持
+
 ## エラー出力規約
 
 - **成功**: exit 0, stdout に出力
 - **エラー**: exit 1, stderr にメッセージ
   - `--format json` 時は `{"error": "<code>", "message": "..."}` 形式で stderr に出力
 - **エラー時は stdout は空** — プラグイン側で `2>&1` を使っても安全にパースできる
+- **注意**: `init` の部分補完（ケースC）では成功（exit 0）でも stderr に `warning: missing fields added with defaults: ...` を出力する。Kakoune プラグインは stderr を別ファイルでキャプチャしているため影響なし
 
 ### エラー種別
 
@@ -356,7 +376,9 @@ vault 内の全 `.md` ファイル（SRS トラッキング有無を問わない
 src/
 ├── main.rs          # エントリポイント
 ├── cli.rs           # clap derive定義
+├── cache.rs         # フロントマターキャッシュ（mtime+size判定）
 ├── config.rs        # 設定読み込み (~/.config/sprout/config.toml)
+├── error.rs         # エラー型定義
 ├── frontmatter.rs   # YAMLフロントマターのパース（gray_matter）と文字列書き戻し
 ├── note.rs          # ノート検出、読み書き
 ├── links.rs         # [[wiki-link]] パースとリンクカウント
