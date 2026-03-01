@@ -79,6 +79,7 @@ exclude_dirs = [".git", ".obsidian", ".trash"]
 | [config.md](docs/design/config.md) | 設定ファイル仕様・vault パス解決順序 |
 | [kakoune-plugin.md](docs/design/kakoune-plugin.md) | Kakoune プラグイン・User hook 設計 |
 | [nix-packaging.md](docs/design/nix-packaging.md) | Nix Flake パッケージング・dotfiles 統合 |
+| [mobile-workflow.md](docs/design/mobile-workflow.md) | Obsidian Mobile ワークフロー・Templater 連携 |
 | [feature-coverage.md](docs/design/feature-coverage.md) | org-roam-review / obsidian-sr との機能比較 |
 
 ## ライセンス

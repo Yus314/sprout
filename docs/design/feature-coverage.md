@@ -27,7 +27,7 @@
 | ノートレビュー | ✅ | ✅ | |
 | リンク先ノートのease参照 | ✅ | ✅ (簡易版) | リンク数のみ使用 |
 | フォルダ無視設定 | ✅ | ✅ (簡易版) | `exclude_dirs` 設定で対応済み |
-| モバイル対応 | ✅ (Obsidian経由) | ❌ | CLIのみ |
+| モバイル対応 | ✅ (Obsidian経由) | △ (ワークフロー対応) | CLIのみ。Obsidian Templater連携ワークフロー（[mobile-workflow.md](mobile-workflow.md)） |
 | Obsidianプラグイン | ✅ | N/A | Kakoune + CLI |
 | YAML frontmatter | ✅ | ✅ | 互換フォーマット |
 | Dataview統合 | ✅ | N/A | CLIネイティブ |
@@ -56,7 +56,7 @@ org-roam-reviewのフック（`node-accepted-hook`等5種）はEmacs Lispの`run
 ## v0.1 カバー率
 
 - **org-roam-review**: コア機能の約85%をカバー（タグフィルタ・バルクレビュー・セッション自動進行除く）
-- **obsidian-sr**: ノートレビュー機能の約70%をカバー（フラッシュカード・モバイル除く）
+- **obsidian-sr**: ノートレビュー機能の約70%をカバー（フラッシュカード除く。モバイルノート作成はワークフローで対応）
 
 ## 優先度
 
